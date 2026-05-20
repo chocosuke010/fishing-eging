@@ -418,6 +418,30 @@ export default function Home() {
             onMapClick={(latlng: {lat: number, lng: number}) => setNewPointLocation(latlng)}
             onMapMoveEnd={(latlng: {lat: number, lng: number}) => setMapCenter(latlng)}
           />
+
+          {/* マップ中央の照準十字カーソル */}
+          <div 
+            className="absolute inset-0 pointer-events-none flex items-center justify-center"
+            style={{ zIndex: 9999 }}
+          >
+            <div className="relative flex items-center justify-center">
+              {/* 横線 */}
+              <div 
+                className="absolute w-8 h-[2px] bg-cyan-400 opacity-80"
+                style={{ boxShadow: "0 0 8px rgba(34, 211, 238, 0.6)" }}
+              ></div>
+              {/* 縦線 */}
+              <div 
+                className="absolute h-8 w-[2px] bg-cyan-400 opacity-80"
+                style={{ boxShadow: "0 0 8px rgba(34, 211, 238, 0.6)" }}
+              ></div>
+              {/* 中央の小さなドット */}
+              <div 
+                className="w-2.5 h-2.5 rounded-full bg-cyan-300 ring-2 ring-cyan-500/50"
+                style={{ boxShadow: "0 0 12px rgba(34, 211, 238, 1)" }}
+              ></div>
+            </div>
+          </div>
         </div>
 
         {/* Filter Panel (Desktop vs Mobile overlay) */}
