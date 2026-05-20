@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Moon, Droplets, MapPin, Loader2, ArrowUp, Flower2, Filter, SlidersHorizontal, X, Pencil, Save, Copy } from "lucide-react"
+import { Moon, Droplets, MapPin, Loader2, ArrowUp, Flower2, Filter, SlidersHorizontal, X, Pencil, Save, Copy, Car } from "lucide-react"
 import dynamic from "next/dynamic"
 import pointsData from "@/data/points.json"
 import { getWindDirectionString } from "@/lib/wind-utils"
@@ -550,6 +550,21 @@ export default function Home() {
                     </button>
                   )}
                 </CardHeader>
+
+                {selectedPoint && (
+                  <div className="mb-2">
+                    <button
+                      onClick={() => {
+                        const url = `https://www.google.com/maps/dir/?api=1&destination=${selectedPoint.coordinates.lat},${selectedPoint.coordinates.lng}`;
+                        window.open(url, '_blank');
+                      }}
+                      className="flex items-center justify-center gap-2 w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs md:text-sm font-bold py-2 px-4 rounded-xl transition-all shadow-[0_0_15px_rgba(37,99,235,0.3)] hover:shadow-[0_0_20px_rgba(37,99,235,0.5)] active:scale-[0.98]"
+                    >
+                      <Car className="w-4 h-4 text-white animate-pulse" />
+                      Googleマップでナビ
+                    </button>
+                  </div>
+                )}
                 
                 <div className="flex flex-col gap-5">
                   {/* Visual Wind Indicator (Windy style) */}

@@ -249,6 +249,20 @@ export default function Map({ pointsData, pointWinds, selectedPointId, onSelectP
                       </span>
                     </div>
                   )}
+
+                  {/* Googleマップナビボタン */}
+                  <div className="mt-4 pt-3 border-t border-slate-700/50">
+                    <button
+                      onClick={() => {
+                        const url = `https://www.google.com/maps/dir/?api=1&destination=${point.coordinates.lat},${point.coordinates.lng}`;
+                        window.open(url, '_blank');
+                      }}
+                      className="flex items-center justify-center gap-2 w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold py-2 px-3 rounded-lg transition-colors shadow-[0_0_10px_rgba(37,99,235,0.2)]"
+                    >
+                      <Car className="w-4 h-4" />
+                      Googleマップでナビ
+                    </button>
+                  </div>
                 </div>
               </Popup>
             </Marker>
