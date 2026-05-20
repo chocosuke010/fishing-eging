@@ -161,6 +161,11 @@ export default function Map({ pointsData, pointWinds, selectedPointId, onSelectP
 
   return (
     <div className={`absolute inset-0 z-0 ${isEditMode ? 'leaflet-edit-cursor' : ''}`}>
+      <style>{`
+        .map-tile-dark {
+          filter: invert(100%) hue-rotate(180deg) brightness(95%) contrast(90%);
+        }
+      `}</style>
       <MapContainer
         center={center}
         zoom={9}
@@ -171,7 +176,8 @@ export default function Map({ pointsData, pointWinds, selectedPointId, onSelectP
         <LocationMarker location={currentLocation} />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          className="map-tile-dark"
         />
         {pointsData.map((point) => {
           let status: "safe" | "danger" | "normal" = "normal";
