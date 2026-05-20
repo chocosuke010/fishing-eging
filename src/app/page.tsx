@@ -35,6 +35,10 @@ export interface FilterState {
 export default function Home() {
   const [pointForecasts, setPointForecasts] = useState<Record<string, ForecastData>>({});
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
+  const [mapCenter, setMapCenter] = useState<{lat: number, lng: number} | null>(null);
+  const [centerForecast, setCenterForecast] = useState<ForecastData | null>(null);
+  const [loadingCenterWeather, setLoadingCenterWeather] = useState(false);
+  const [formMemo, setFormMemo] = useState("");
   const [timeOffset, setTimeOffset] = useState<0 | 3 | 6>(0);
   const [loading, setLoading] = useState(true);
   const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number} | null>(null);
@@ -137,9 +141,49 @@ export default function Home() {
     return () => clearInterval(interval);
   }, [customPoints.length]);
 
+  // Map Center Weather Fetch with 500ms Debounce
+  useEffect(() => {
+    if (!mapCenter) return;
+
+    setLoadingCenterWeather(true);
+    const delayDebounce = setTimeout(async () => {
+      try {
+        const { lat, lng } = mapCenter;
+        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&hourly=wind_speed_10m,wind_direction_10m,temperature_2m,precipitation_probability,precipitation,weather_code&wind_speed_unit=ms&forecast_hours=7`);
+        const data = await res.json();
+        
+        if (data && data.hourly) {
+          const buildWeatherData = (offset: number) => ({
+            speed: data.hourly.wind_speed_10m[offset],
+            angle: data.hourly.wind_direction_10m[offset],
+            temperature: data.hourly.temperature_2m[offset],
+            precipitation_prob: Math.round(data.hourly.precipitation_probability[offset] / 10) * 10,
+            precipitation: data.hourly.precipitation[offset],
+            weather_code: data.hourly.weather_code[offset]
+          });
+
+          setCenterForecast({
+            0: buildWeatherData(0),
+            3: buildWeatherData(3),
+            6: buildWeatherData(6),
+          });
+        }
+      } catch (err) {
+        console.error("Failed to fetch center weather", err);
+      } finally {
+        setLoadingCenterWeather(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(delayDebounce);
+  }, [mapCenter]);
+
   const displayWind = useMemo(() => {
     if (selectedPointId && pointForecasts[selectedPointId]) {
       return pointForecasts[selectedPointId][timeOffset];
+    }
+    if (centerForecast) {
+      return centerForecast[timeOffset];
     }
     const forecasts = Object.values(pointForecasts);
     if (forecasts.length > 0) {
@@ -158,7 +202,7 @@ export default function Home() {
       };
     }
     return null;
-  }, [selectedPointId, pointForecasts, timeOffset]);
+  }, [selectedPointId, pointForecasts, centerForecast, timeOffset]);
 
   // Map only the current time offset's wind data for Map.tsx
   const currentPointWinds = useMemo(() => {
@@ -170,7 +214,11 @@ export default function Home() {
   }, [pointForecasts, timeOffset]);
 
   const selectedPoint = customPoints.find(p => p.id === selectedPointId);
-  const dashboardTitle = selectedPoint ? selectedPoint.name : "エリア全体 (平均)";
+  const dashboardTitle = selectedPoint 
+    ? selectedPoint.name 
+    : mapCenter 
+      ? `カーソル位置 (${mapCenter.lat.toFixed(4)}, ${mapCenter.lng.toFixed(4)})` 
+      : "エリア全体 (平均)";
 
   const handleGetLocation = () => {
     setIsLocating(true);
@@ -207,6 +255,7 @@ export default function Home() {
       danger_wind_angles: [{ min: dangerMin, max: dangerMax }],
       max_wind_tolerance: 5.0,
       features: formFeatures,
+      memo: formMemo,
       spring_eging: {
         has_seaweed: formHasSeaweed,
         seaweed_type: formHasSeaweed ? "未設定" : "",
@@ -218,6 +267,7 @@ export default function Home() {
     setNewPointLocation(null);
     setFormName("");
     setFormFeatures([]);
+    setFormMemo("");
   };
 
   const handleExportJson = () => {
@@ -366,6 +416,7 @@ export default function Home() {
             filters={filters}
             isEditMode={isEditMode}
             onMapClick={(latlng: {lat: number, lng: number}) => setNewPointLocation(latlng)}
+            onMapMoveEnd={(latlng: {lat: number, lng: number}) => setMapCenter(latlng)}
           />
         </div>
 
@@ -684,6 +735,19 @@ export default function Home() {
                     </div>
                   </div>
 
+                  {/* Memo Section */}
+                  {selectedPoint && selectedPoint.memo && (
+                    <div className="border-t border-slate-700/85 pt-4 flex flex-col gap-2">
+                      <div className="flex items-center gap-1.5 text-slate-400 text-sm font-bold">
+                        <Pencil className="w-4 h-4 text-cyan-400" />
+                        ポイントメモ
+                      </div>
+                      <div className="bg-slate-950/40 rounded-xl p-3.5 border border-slate-800 text-xs md:text-sm text-slate-300 leading-relaxed whitespace-pre-wrap">
+                        {selectedPoint.memo}
+                      </div>
+                    </div>
+                  )}
+
                   {/* Time Slider (Forecast) */}
                   <div className="border-t border-slate-700/85 pt-4">
                     <div className="text-xs md:text-sm font-semibold text-slate-400 mb-2.5">風予測（タイムスライダー）</div>
@@ -786,6 +850,18 @@ export default function Home() {
                       <span className="text-sm text-slate-400 group-hover:text-slate-200 transition-colors">🚗 駐車場あり</span>
                     </label>
                   </div>
+                </div>
+
+                {/* Memo */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-semibold text-slate-300">メモ（備考・根掛かりや時合など）</label>
+                  <textarea
+                    value={formMemo}
+                    onChange={(e) => setFormMemo(e.target.value)}
+                    placeholder="例: 常夜灯の周りは浅い。満潮前後がチャンス。手前は根荒い。"
+                    rows={3}
+                    className="bg-slate-950 border border-slate-700 text-slate-100 p-2.5 rounded-md focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all resize-none text-sm placeholder:text-slate-650"
+                  />
                 </div>
 
               </CardContent>

@@ -26,6 +26,26 @@ interface MapProps {
   };
   isEditMode?: boolean;
   onMapClick?: (latlng: {lat: number, lng: number}) => void;
+  onMapMoveEnd?: (latlng: {lat: number, lng: number}) => void;
+}
+
+// A component to catch map center moves and notify parent
+function MapMoveHandler({ onMoveEnd }: { onMoveEnd: (latlng: { lat: number, lng: number }) => void }) {
+  const map = useMapEvents({
+    moveend: () => {
+      const center = map.getCenter();
+      onMoveEnd({ lat: center.lat, lng: center.lng });
+    },
+  });
+
+  useEffect(() => {
+    if (map) {
+      const center = map.getCenter();
+      onMoveEnd({ lat: center.lat, lng: center.lng });
+    }
+  }, [map]); // Only run on mount or map change
+
+  return null;
 }
 
 // A component to catch map clicks and deselect the point
@@ -112,7 +132,7 @@ function LocationMarker({ location }: { location: { lat: number, lng: number } |
   );
 }
 
-export default function Map({ pointsData, pointWinds, selectedPointId, onSelectPoint, currentLocation, isSpringMode, filters, isEditMode, onMapClick }: MapProps) {
+export default function Map({ pointsData, pointWinds, selectedPointId, onSelectPoint, currentLocation, isSpringMode, filters, isEditMode, onMapClick, onMapMoveEnd }: MapProps) {
   // Center that can oversee Fukuoka, Saga, and Nagasaki (Itoshima, Yobuko, Hirado, Iki)
   const center: [number, number] = [33.4700, 129.7600];
   const [mounted, setMounted] = useState(false);
@@ -173,6 +193,7 @@ export default function Map({ pointsData, pointWinds, selectedPointId, onSelectP
         zoomControl={false}
       >
         <MapClickHandler onSelectPoint={onSelectPoint} isEditMode={isEditMode} onMapClick={onMapClick} />
+        {onMapMoveEnd && <MapMoveHandler onMoveEnd={onMapMoveEnd} />}
         <LocationMarker location={currentLocation} />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -275,6 +296,18 @@ export default function Map({ pointsData, pointWinds, selectedPointId, onSelectP
           );
         })}
       </MapContainer>
+
+      {/* マップ中央の照準十字カーソル */}
+      <div className="absolute inset-0 pointer-events-none flex items-center justify-center z-[40]">
+        <div className="relative flex items-center justify-center">
+          {/* 横線 */}
+          <div className="absolute w-8 h-[2px] bg-cyan-400/80 shadow-[0_0_8px_rgba(34,211,238,0.6)]"></div>
+          {/* 縦線 */}
+          <div className="absolute h-8 w-[2px] bg-cyan-400/80 shadow-[0_0_8px_rgba(34,211,238,0.6)]"></div>
+          {/* 中央の小さなドット */}
+          <div className="w-2.5 h-2.5 rounded-full bg-cyan-300 ring-2 ring-cyan-500/50 shadow-[0_0_12px_rgba(34,211,238,1)]"></div>
+        </div>
+      </div>
     </div>
   );
 }
