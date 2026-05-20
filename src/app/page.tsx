@@ -231,9 +231,14 @@ export default function Home() {
     <div className="flex flex-col h-screen overflow-hidden bg-slate-950 text-slate-200">
       {/* Header */}
       <header className="h-20 flex-none bg-slate-900/90 backdrop-blur-md border-b border-slate-800 flex items-center px-4 md:px-6 shadow-md z-10 relative">
-        <h1 className="text-xl md:text-2xl font-black bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent flex items-center gap-2 md:gap-3 tracking-tight cursor-pointer" onClick={() => setSelectedPointId(null)}>
-          <Droplets className="w-6 h-6 md:w-8 md:h-8 text-cyan-400 animate-pulse" />
-          {isMobile ? "Eging Wind" : "Eging Wind Shadow"}
+        <h1 className="text-xl md:text-2xl font-black flex items-center gap-2 md:gap-3 tracking-tight cursor-pointer select-none" onClick={() => setSelectedPointId(null)}>
+          <Droplets className="w-6 h-6 md:w-8 md:h-8 text-cyan-400 animate-pulse flex-shrink-0" />
+          <span className="bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+            アオリナビ
+          </span>
+          <span className="font-extralight text-slate-300 tracking-wider text-xs md:text-sm px-1.5 py-0.5 rounded border border-slate-700/60 bg-slate-950/80 shadow-[0_0_10px_rgba(255,255,255,0.05)]">
+            OS
+          </span>
         </h1>
         
         <div className="ml-auto flex items-center gap-2 md:gap-3">

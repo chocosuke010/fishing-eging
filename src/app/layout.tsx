@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Eging Wind Shadow - エギング風裏ナビ",
+  title: "アオリナビOS",
   description: "風向きから最適なエギングポイントを探すアプリ",
 };
 
