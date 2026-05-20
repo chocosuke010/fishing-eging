@@ -31,19 +31,35 @@ interface MapProps {
 
 // A component to catch map center moves and notify parent
 function MapMoveHandler({ onMoveEnd }: { onMoveEnd: (latlng: { lat: number, lng: number }) => void }) {
+  const lastCenter = React.useRef<{ lat: number, lng: number } | null>(null);
+
+  const handleMoveEnd = React.useCallback((center: L.LatLng) => {
+    const nextCenter = { lat: center.lat, lng: center.lng };
+    
+    // 以前の座標と極めて近い（差が 0.0001 未満）の場合は親コンポーネントへの通知をスキップ
+    if (lastCenter.current) {
+      const latDiff = Math.abs(lastCenter.current.lat - nextCenter.lat);
+      const lngDiff = Math.abs(lastCenter.current.lng - nextCenter.lng);
+      if (latDiff < 0.0001 && lngDiff < 0.0001) {
+        return;
+      }
+    }
+    
+    lastCenter.current = nextCenter;
+    onMoveEnd(nextCenter);
+  }, [onMoveEnd]);
+
   const map = useMapEvents({
     moveend: () => {
-      const center = map.getCenter();
-      onMoveEnd({ lat: center.lat, lng: center.lng });
+      handleMoveEnd(map.getCenter());
     },
   });
 
   useEffect(() => {
     if (map) {
-      const center = map.getCenter();
-      onMoveEnd({ lat: center.lat, lng: center.lng });
+      handleMoveEnd(map.getCenter());
     }
-  }, [map]); // Only run on mount or map change
+  }, [map, handleMoveEnd]);
 
   return null;
 }
