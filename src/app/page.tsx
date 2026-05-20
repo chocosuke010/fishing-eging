@@ -361,11 +361,6 @@ export default function Home() {
                 <Copy className="w-4 h-4" />
                 エクスポート
               </button>
-
-              <div className="w-px h-6 bg-slate-700/80 mx-1"></div>
-              <Badge variant="outline" className="bg-slate-800 border-slate-700 text-slate-300 text-base py-1 px-3 cursor-pointer hover:bg-slate-700" onClick={() => setSelectedPointId(null)}>
-                全体に戻る
-              </Badge>
             </>
           ) : (
             // モバイル用設定メニュー
@@ -629,17 +624,6 @@ export default function Home() {
                       </div>
                     </>
                   )}
-                  {selectedPointId && (
-                    <button 
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedPointId(null);
-                      }}
-                      className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-450 hover:text-slate-200 border border-slate-700 font-bold py-1 px-2 rounded"
-                    >
-                      全体へ
-                    </button>
-                  )}
                 </div>
               </div>
             ) : (
@@ -651,14 +635,6 @@ export default function Home() {
                     {loading && <Loader2 className="w-5 h-5 animate-spin text-cyan-500" />}
                   </CardTitle>
                   <div className="flex items-center gap-2">
-                    {isMobile && selectedPointId && (
-                      <button 
-                        onClick={() => setSelectedPointId(null)}
-                        className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-350 border border-slate-700 font-bold py-1.5 px-3 rounded-lg hidden sm:block"
-                      >
-                        全体に戻る
-                      </button>
-                    )}
                     {isMobile && (
                       <button
                         onClick={() => {
