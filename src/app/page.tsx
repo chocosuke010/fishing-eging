@@ -10,6 +10,9 @@ import { getWindDirectionString } from "@/lib/wind-utils"
 import { getWeatherInfo } from "@/lib/weather-utils"
 
 const Map = dynamic(() => import("@/components/Map"), { ssr: false })
+const TideChart = dynamic(() => import("@/components/TideChart"), { ssr: false })
+
+import { getTideDataForPoint, getCurrentTideStatus } from "@/lib/tide-utils"
 
 export interface WindData {
   speed: number;
@@ -35,6 +38,23 @@ export interface FilterState {
 export default function Home() {
   const [pointForecasts, setPointForecasts] = useState<Record<string, ForecastData>>({});
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
+  const [showTideModal, setShowTideModal] = useState(false);
+
+  // 潮位計算のための現在時刻（0〜23時の小数値）
+  const currentHour = useMemo(() => {
+    const now = new Date();
+    return now.getHours() + now.getMinutes() / 60;
+  }, []);
+
+  // 選択中のポイントの潮汐情報
+  const tideData = useMemo(() => {
+    return getTideDataForPoint(selectedPointId);
+  }, [selectedPointId]);
+
+  // 現在時刻における潮高と上げ下げステータス
+  const currentTideStatus = useMemo(() => {
+    return getCurrentTideStatus(selectedPointId, currentHour);
+  }, [selectedPointId, currentHour]);
   const [mapCenter, setMapCenter] = useState<{lat: number, lng: number} | null>(null);
   const [centerForecast, setCenterForecast] = useState<ForecastData | null>(null);
   const [loadingCenterWeather, setLoadingCenterWeather] = useState(false);
@@ -742,20 +762,49 @@ export default function Home() {
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-4 border-t border-slate-700/85 pt-4">
+                  {/* Tide / Moon Info (Click to open Modal) */}
+                  <div 
+                    onClick={() => setShowTideModal(true)}
+                    className="grid grid-cols-2 gap-4 border-t border-slate-700/85 pt-4 cursor-pointer hover:bg-slate-800/30 rounded-xl p-3.5 transition-all duration-300 group hover:shadow-[0_0_15px_rgba(34,211,238,0.05)] border border-transparent hover:border-slate-800"
+                    title="潮見表・潮汐グラフを表示"
+                  >
                     <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-1.5 text-slate-400 text-sm md:text-base font-bold">
-                        <Moon className="w-5 h-5 text-yellow-400/90" />
+                      <div className="flex items-center gap-1.5 text-slate-400 text-sm md:text-base font-bold group-hover:text-slate-350 transition-colors">
+                        <Moon className="w-5 h-5 text-yellow-400/90 group-hover:animate-pulse" />
                         Moon
                       </div>
-                      <span className="text-base md:text-lg font-bold text-slate-100">中潮 (半月)</span>
+                      <span className="text-base md:text-lg font-bold text-slate-100 group-hover:text-cyan-400 transition-colors">
+                        {tideData.tideType}
+                      </span>
                     </div>
                     <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-1.5 text-slate-400 text-sm md:text-base font-bold">
-                        <Droplets className="w-5 h-5 text-cyan-400/90" />
+                      <div className="flex items-center gap-1.5 text-slate-400 text-sm md:text-base font-bold group-hover:text-slate-350 transition-colors">
+                        <Droplets className="w-5 h-5 text-cyan-400/90 group-hover:animate-bounce" />
                         Tide
                       </div>
-                      <span className="text-base md:text-lg font-bold text-slate-100">満潮 18:30</span>
+                      <span className="text-base md:text-lg font-bold text-slate-100 group-hover:text-cyan-400 transition-colors flex items-center gap-1.5">
+                        {tideData.highTides[0]?.time ? `満潮 ${tideData.highTides[0].time}` : "データなし"}
+                      </span>
+                    </div>
+                    
+                    {/* 現在の潮位・上げ下げのインジケーター */}
+                    <div className="col-span-2 flex items-center justify-between text-xs text-cyan-400 bg-cyan-950/30 px-3 py-1.5 rounded-lg border border-cyan-800/30 mt-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+                        </span>
+                        <span className="font-bold">現在潮位: {currentTideStatus.currentLevel} cm</span>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-black tracking-wider ${
+                        currentTideStatus.statusText === "上げ潮" 
+                          ? "bg-emerald-950/80 text-emerald-300 border border-emerald-800/40" 
+                          : currentTideStatus.statusText === "下げ潮"
+                            ? "bg-blue-950/80 text-blue-300 border border-blue-800/40"
+                            : "bg-slate-800 text-slate-300 border border-slate-700"
+                      }`}>
+                        {currentTideStatus.statusText}
+                      </span>
                     </div>
                   </div>
 
@@ -908,6 +957,114 @@ export default function Home() {
             </Card>
           </div>
         )}
+
+      {/* 潮汐詳細モーダル (Dialog) */}
+      {showTideModal && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[350] flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+          <Card className="w-full max-w-xl bg-slate-900/95 backdrop-blur-xl border-slate-700/60 shadow-2xl rounded-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200 relative">
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-blue-500 via-cyan-400 to-blue-600"></div>
+            
+            <CardHeader className="pb-3 pt-6 border-b border-slate-800/80 px-6">
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col">
+                  <div className="text-[10px] font-black text-cyan-400 tracking-wider">TIDE GRAPH</div>
+                  <CardTitle className="text-lg md:text-xl font-black text-slate-100 flex items-center gap-2">
+                    <Droplets className="w-5 h-5 text-cyan-400 animate-pulse" />
+                    潮汐詳細グラフ & 潮見表
+                  </CardTitle>
+                </div>
+                <button 
+                  onClick={() => setShowTideModal(false)} 
+                  className="text-slate-400 hover:text-white transition-colors bg-slate-800 hover:bg-slate-700 p-1.5 rounded-lg border border-slate-700/60"
+                >
+                  <X className="w-5 h-5"/>
+                </button>
+              </div>
+            </CardHeader>
+            
+            <CardContent className="pt-6 px-6 pb-6 flex flex-col gap-6">
+              {/* 対象ポイント・潮回り概要 */}
+              <div className="flex items-center justify-between bg-slate-950/50 p-4 rounded-xl border border-slate-800">
+                <div>
+                  <div className="text-[10px] font-bold text-slate-500">対象エリア/ポイント</div>
+                  <div className="text-base font-black text-white truncate max-w-[200px] md:max-w-[300px]">
+                    {selectedPoint ? selectedPoint.name : "エリア全体 (平均)"}
+                  </div>
+                </div>
+                <div className="flex flex-col items-end">
+                  <div className="text-[10px] font-bold text-slate-500 mb-0.5">潮回り</div>
+                  <span className="text-xs font-black bg-cyan-950 text-cyan-400 border border-cyan-700/50 px-3 py-1 rounded-lg shadow-[0_0_10px_rgba(6,182,212,0.1)]">
+                    {tideData.tideType}
+                  </span>
+                </div>
+              </div>
+
+              {/* Tide Chart Display */}
+              <div className="bg-slate-950/30 rounded-2xl p-4 border border-slate-800/60">
+                <TideChart 
+                  data={tideData.hourlyData} 
+                  currentHour={currentHour} 
+                  currentLevel={currentTideStatus.currentLevel} 
+                />
+              </div>
+
+              {/* 満潮・干潮のタイムライン */}
+              <div className="grid grid-cols-2 gap-4">
+                {/* 満潮 */}
+                <div className="flex flex-col gap-2.5 bg-slate-950/40 p-4 rounded-xl border border-slate-800">
+                  <div className="text-xs font-black text-pink-400 flex items-center gap-1.5">
+                    <ArrowUp className="w-3.5 h-3.5 animate-bounce" />
+                    満潮 (High Tide)
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    {tideData.highTides.map((event, idx) => (
+                      <div key={idx} className="flex justify-between items-baseline text-sm">
+                        <span className="font-mono text-slate-300 font-bold">{event.time}</span>
+                        <span className="font-mono text-white font-black">{event.level} <span className="text-[10px] text-slate-500 font-normal">cm</span></span>
+                      </div>
+                    ))}
+                    {tideData.highTides.length === 0 && <span className="text-xs text-slate-500">データなし</span>}
+                  </div>
+                </div>
+
+                {/* 干潮 */}
+                <div className="flex flex-col gap-2.5 bg-slate-950/40 p-4 rounded-xl border border-slate-800">
+                  <div className="text-xs font-black text-cyan-400 flex items-center gap-1.5">
+                    <ArrowUp className="w-3.5 h-3.5 transform rotate-180" />
+                    干潮 (Low Tide)
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    {tideData.lowTides.map((event, idx) => (
+                      <div key={idx} className="flex justify-between items-baseline text-sm">
+                        <span className="font-mono text-slate-300 font-bold">{event.time}</span>
+                        <span className="font-mono text-white font-black">{event.level} <span className="text-[10px] text-slate-500 font-normal">cm</span></span>
+                      </div>
+                    ))}
+                    {tideData.lowTides.length === 0 && <span className="text-xs text-slate-500">データなし</span>}
+                  </div>
+                </div>
+              </div>
+
+              {/* 現在の状況概要 */}
+              <div className="bg-slate-950/80 p-4 rounded-xl border border-slate-850 flex items-center justify-between text-sm">
+                <span className="text-slate-400 font-bold">現在のステータス:</span>
+                <div className="flex items-center gap-3">
+                  <span className="font-black text-white text-base">{currentTideStatus.currentLevel} cm</span>
+                  <span className={`px-2.5 py-1 rounded-lg text-xs font-black ${
+                    currentTideStatus.statusText === "上げ潮" 
+                      ? "bg-emerald-950 text-emerald-300 border border-emerald-800/50 shadow-[0_0_10px_rgba(16,185,129,0.1)]" 
+                      : currentTideStatus.statusText === "下げ潮"
+                        ? "bg-blue-950 text-blue-300 border border-blue-800/50 shadow-[0_0_10px_rgba(59,130,246,0.1)]"
+                        : "bg-slate-800 text-slate-200 border border-slate-700"
+                  }`}>
+                    {currentTideStatus.statusText}
+                  </span>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
       </main>
     </div>
   )
