@@ -16,6 +16,7 @@ export interface WindData {
   angle: number;
   temperature: number;
   precipitation_prob: number;
+  precipitation: number;
   weather_code: number;
 }
 
@@ -92,7 +93,7 @@ export default function Home() {
         const lngs = customPoints.map(p => p.coordinates.lng).join(",");
         
         // Fetch hourly data (for next 7 hours)
-        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lngs}&hourly=wind_speed_10m,wind_direction_10m,temperature_2m,precipitation_probability,weather_code&wind_speed_unit=ms&forecast_hours=7`);
+        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lngs}&hourly=wind_speed_10m,wind_direction_10m,temperature_2m,precipitation_probability,precipitation,weather_code&wind_speed_unit=ms&forecast_hours=7`);
         let dataArray = await res.json();
         
         // Open-Meteo returns a single object if only one coordinate is requested
@@ -110,7 +111,8 @@ export default function Home() {
                 speed: data.hourly.wind_speed_10m[offset],
                 angle: data.hourly.wind_direction_10m[offset],
                 temperature: data.hourly.temperature_2m[offset],
-                precipitation_prob: data.hourly.precipitation_probability[offset],
+                precipitation_prob: Math.round(data.hourly.precipitation_probability[offset] / 10) * 10,
+                precipitation: data.hourly.precipitation[offset],
                 weather_code: data.hourly.weather_code[offset]
               });
 
@@ -143,12 +145,15 @@ export default function Home() {
     if (forecasts.length > 0) {
       const avgSpeed = forecasts.reduce((acc, curr) => acc + curr[timeOffset].speed, 0) / forecasts.length;
       const avgTemp = forecasts.reduce((acc, curr) => acc + curr[timeOffset].temperature, 0) / forecasts.length;
-      const avgProb = Math.round(forecasts.reduce((acc, curr) => acc + curr[timeOffset].precipitation_prob, 0) / forecasts.length);
+      let avgProb = Math.round(forecasts.reduce((acc, curr) => acc + curr[timeOffset].precipitation_prob, 0) / forecasts.length);
+      avgProb = Math.round(avgProb / 10) * 10;
+      const avgPrecipitation = forecasts.reduce((acc, curr) => acc + curr[timeOffset].precipitation, 0) / forecasts.length;
       return { 
         speed: avgSpeed, 
         angle: forecasts[0][timeOffset].angle,
         temperature: avgTemp,
         precipitation_prob: avgProb,
+        precipitation: avgPrecipitation,
         weather_code: forecasts[0][timeOffset].weather_code
       };
     }
@@ -648,6 +653,11 @@ export default function Home() {
                           <span className="text-2xl md:text-3xl font-black text-blue-400">{displayWind.precipitation_prob}</span>
                           <span className="text-base md:text-lg font-bold text-blue-500/70">%</span>
                         </div>
+                        {displayWind.precipitation > 0 && (
+                          <div className="text-[10px] md:text-xs font-semibold text-blue-300 mt-1 text-right">
+                            降水量: {displayWind.precipitation.toFixed(1)} mm/h
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
