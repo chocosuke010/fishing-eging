@@ -1,0 +1,103 @@
+[
+  {
+    "id": "port_kishi_01",
+    "name": "岐志漁港",
+    "coordinates": {
+      "lat": 33.57422,
+      "lng": 130.12008
+    },
+    "safe_wind_angles": [
+      { "min": 90, "max": 270 } 
+    ],
+    "danger_wind_angles": [
+      { "min": 315, "max": 45 }
+    ],
+    "max_wind_tolerance": 4.0,
+    "features": ["night_light", "parking", "squid_ink_marks"],
+    "spring_eging": {
+      "has_seaweed": true,
+      "seaweed_type": "アマモ",
+      "depth_type": "ディープ〜シャロー隣接"
+    }
+  },
+
+  {
+    "id": "port_funakoshi_01",
+    "name": "船越漁港",
+    "coordinates": {
+      "lat": 33.55752,
+      "lng": 130.12751
+    },
+    "safe_wind_angles": [
+      { "min": 180, "max": 360 }
+    ],
+    "danger_wind_angles": [
+      { "min": 45, "max": 135 }
+    ],
+    "max_wind_tolerance": 3.5,
+    "features": ["night_light", "parking"],
+    "spring_eging": {
+      "has_seaweed": false,
+      "seaweed_type": "",
+      "depth_type": "ディープエリア"
+    }
+  },
+
+  {
+    "id": "port_fukuoka_nokita",
+    "name": "野北漁港 (福岡・糸島)",
+    "coordinates": { "lat": 33.6165, "lng": 130.1558 },
+    "safe_wind_angles": [{ "min": 90, "max": 270 }],
+    "danger_wind_angles": [{ "min": 270, "max": 45 }],
+    "max_wind_tolerance": 4.0,
+    "features": ["night_light", "parking", "squid_ink_marks"],
+    "spring_eging": {
+      "has_seaweed": true,
+      "seaweed_type": "ホンダワラ（ガラモ）",
+      "depth_type": "シャロー〜ディープ"
+    }
+  },
+  {
+    "id": "port_saga_kabeshima",
+    "name": "加部島漁港 (佐賀・呼子)",
+    "coordinates": { "lat": 33.5450, "lng": 129.8850 },
+    "safe_wind_angles": [{ "min": 180, "max": 360 }],
+    "danger_wind_angles": [{ "min": 0, "max": 180 }],
+    "max_wind_tolerance": 4.0,
+    "features": ["night_light", "parking", "good_tidal_flow"],
+    "spring_eging": {
+      "has_seaweed": true,
+      "seaweed_type": "アマモ",
+      "depth_type": "シャローエリア"
+    }
+  },
+  {
+    "id": "port_nagasaki_miyanoura",
+    "name": "宮ノ浦漁港 (長崎・平戸)",
+    "coordinates": { "lat": 33.1947, "lng": 129.3587 },
+    "safe_wind_angles": [{ "min": 45, "max": 180 }],
+    "danger_wind_angles": [{ "min": 225, "max": 315 }],
+    "max_wind_tolerance": 4.0,
+    "features": ["night_light", "parking", "good_tidal_flow"],
+    "spring_eging": {
+      "has_seaweed": true,
+      "seaweed_type": "ガラモ",
+      "depth_type": "ディープ隣接"
+    }
+  },
+  {
+    "id": "port_nagasaki_gonoura",
+    "name": "郷ノ浦港周辺 (長崎・壱岐)",
+    "coordinates": { "lat": 33.7425, "lng": 129.6846 },
+    "safe_wind_angles": [{ "min": 270, "max": 360 }, { "min": 0, "max": 90 }],
+    "danger_wind_angles": [{ "min": 135, "max": 225 }],
+    "max_wind_tolerance": 4.0,
+    "features": ["night_light", "parking"],
+    "spring_eging": {
+      "has_seaweed": true,
+      "seaweed_type": "アマモ・ガラモ",
+      "depth_type": "シャローエリア"
+    }
+  }
+]
+

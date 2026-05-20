@@ -1,0 +1,8 @@
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+# Netlify's Next.js Runtime (Plugin) will automatically be used.
+# If you want to explicitly pin the plugin, you can uncomment below.
+# [[plugins]]
+#   package = "@netlify/plugin-nextjs"

@@ -1,65 +1,598 @@
-import Image from "next/image";
+"use client";
+
+import { useEffect, useState, useMemo } from "react"
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Moon, Droplets, MapPin, Loader2, ArrowUp, Flower2, Filter, SlidersHorizontal, X, Pencil, Save, Copy } from "lucide-react"
+import dynamic from "next/dynamic"
+import pointsData from "@/data/points.json"
+import { getWindDirectionString } from "@/lib/wind-utils"
+import { getWeatherInfo } from "@/lib/weather-utils"
+
+const Map = dynamic(() => import("@/components/Map"), { ssr: false })
+
+export interface WindData {
+  speed: number;
+  angle: number;
+  temperature: number;
+  precipitation_prob: number;
+  weather_code: number;
+}
+
+export interface ForecastData {
+  0: WindData;
+  3: WindData;
+  6: WindData;
+}
+
+export interface FilterState {
+  maxWindSpeed: number;
+  windTolerance: "safe_only" | "allow_normal" | "all";
+  requiredFeatures: string[];
+}
 
 export default function Home() {
+  const [pointForecasts, setPointForecasts] = useState<Record<string, ForecastData>>({});
+  const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
+  const [timeOffset, setTimeOffset] = useState<0 | 3 | 6>(0);
+  const [loading, setLoading] = useState(true);
+  const [currentLocation, setCurrentLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+  const [isSpringMode, setIsSpringMode] = useState(false);
+  
+  // Point Registration Mode State
+  const [customPoints, setCustomPoints] = useState<any[]>(pointsData);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [newPointLocation, setNewPointLocation] = useState<{lat: number, lng: number} | null>(null);
+
+  // Form State
+  const [formName, setFormName] = useState("");
+  const [formSafeWindMin, setFormSafeWindMin] = useState(0);
+  const [formSafeWindMax, setFormSafeWindMax] = useState(360);
+  const [formFeatures, setFormFeatures] = useState<string[]>([]);
+  const [formHasSeaweed, setFormHasSeaweed] = useState(false);
+  const [formShallow, setFormShallow] = useState(false);
+
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState<FilterState>({
+    maxWindSpeed: 8,
+    windTolerance: "allow_normal",
+    requiredFeatures: []
+  });
+
+  useEffect(() => {
+    async function fetchWeather() {
+      try {
+        const lats = customPoints.map(p => p.coordinates.lat).join(",");
+        const lngs = customPoints.map(p => p.coordinates.lng).join(",");
+        
+        // Fetch hourly data (for next 7 hours)
+        const res = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lngs}&hourly=wind_speed_10m,wind_direction_10m,temperature_2m,precipitation_probability,weather_code&wind_speed_unit=ms&forecast_hours=7`);
+        let dataArray = await res.json();
+        
+        // Open-Meteo returns a single object if only one coordinate is requested
+        if (!Array.isArray(dataArray) && customPoints.length === 1) {
+          dataArray = [dataArray];
+        } else if (!Array.isArray(dataArray)) {
+          dataArray = [];
+        }
+        
+        const newForecasts: Record<string, ForecastData> = {};
+        if (Array.isArray(dataArray)) {
+          dataArray.forEach((data: any, idx: number) => {
+            if (data && data.hourly && customPoints[idx]) {
+              const buildWeatherData = (offset: number) => ({
+                speed: data.hourly.wind_speed_10m[offset],
+                angle: data.hourly.wind_direction_10m[offset],
+                temperature: data.hourly.temperature_2m[offset],
+                precipitation_prob: data.hourly.precipitation_probability[offset],
+                weather_code: data.hourly.weather_code[offset]
+              });
+
+              newForecasts[customPoints[idx].id] = {
+                0: buildWeatherData(0),
+                3: buildWeatherData(3),
+                6: buildWeatherData(6),
+              };
+            }
+          });
+        }
+        setPointForecasts(newForecasts);
+      } catch (err) {
+        console.error("Failed to fetch weather", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchWeather();
+    
+    const interval = setInterval(fetchWeather, 10 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [customPoints.length]);
+
+  const displayWind = useMemo(() => {
+    if (selectedPointId && pointForecasts[selectedPointId]) {
+      return pointForecasts[selectedPointId][timeOffset];
+    }
+    const forecasts = Object.values(pointForecasts);
+    if (forecasts.length > 0) {
+      const avgSpeed = forecasts.reduce((acc, curr) => acc + curr[timeOffset].speed, 0) / forecasts.length;
+      const avgTemp = forecasts.reduce((acc, curr) => acc + curr[timeOffset].temperature, 0) / forecasts.length;
+      const avgProb = Math.round(forecasts.reduce((acc, curr) => acc + curr[timeOffset].precipitation_prob, 0) / forecasts.length);
+      return { 
+        speed: avgSpeed, 
+        angle: forecasts[0][timeOffset].angle,
+        temperature: avgTemp,
+        precipitation_prob: avgProb,
+        weather_code: forecasts[0][timeOffset].weather_code
+      };
+    }
+    return null;
+  }, [selectedPointId, pointForecasts, timeOffset]);
+
+  // Map only the current time offset's wind data for Map.tsx
+  const currentPointWinds = useMemo(() => {
+    const winds: Record<string, WindData> = {};
+    for (const [id, forecast] of Object.entries(pointForecasts)) {
+      winds[id] = forecast[timeOffset];
+    }
+    return winds;
+  }, [pointForecasts, timeOffset]);
+
+  const selectedPoint = customPoints.find(p => p.id === selectedPointId);
+  const dashboardTitle = selectedPoint ? selectedPoint.name : "エリア全体 (平均)";
+
+  const handleGetLocation = () => {
+    setIsLocating(true);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setCurrentLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          setIsLocating(false);
+        },
+        (err) => {
+          console.error("GPS error", err);
+          alert("現在地を取得できませんでした。ブラウザの設定をご確認ください。");
+          setIsLocating(false);
+        }
+      );
+    } else {
+      alert("お使いのブラウザはGPS機能に対応していません。");
+      setIsLocating(false);
+    }
+  };
+
+  const handleSavePoint = () => {
+    if (!newPointLocation || !formName) return;
+
+    // 簡単な逆風（danger）の計算（safeの逆をざっくり設定）
+    const dangerMin = (formSafeWindMax + 0) % 360;
+    const dangerMax = (formSafeWindMin + 360) % 360; // 簡略化のため適当な範囲
+
+    const newPoint = {
+      id: `custom_port_${Date.now()}`,
+      name: formName,
+      coordinates: { lat: newPointLocation.lat, lng: newPointLocation.lng },
+      safe_wind_angles: [{ min: formSafeWindMin, max: formSafeWindMax }],
+      danger_wind_angles: [{ min: dangerMin, max: dangerMax }],
+      max_wind_tolerance: 5.0,
+      features: formFeatures,
+      spring_eging: {
+        has_seaweed: formHasSeaweed,
+        seaweed_type: formHasSeaweed ? "未設定" : "",
+        depth_type: formShallow ? "シャロー" : "ディープ"
+      }
+    };
+
+    setCustomPoints([...customPoints, newPoint]);
+    setNewPointLocation(null);
+    setFormName("");
+    setFormFeatures([]);
+  };
+
+  const handleExportJson = () => {
+    const jsonString = JSON.stringify(customPoints, null, 2);
+    navigator.clipboard.writeText(jsonString).then(() => {
+      alert("現在の全ポイントデータをクリップボードにコピーしました！\n（points.jsonに上書きして保存できます）");
+    });
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div className="flex flex-col h-screen overflow-hidden bg-slate-950 text-slate-200">
+      {/* Header */}
+      <header className="h-20 flex-none bg-slate-900/90 backdrop-blur-md border-b border-slate-800 flex items-center px-6 shadow-md z-10 relative">
+        <h1 className="text-2xl font-black bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent flex items-center gap-3 tracking-tight">
+          <Droplets className="w-8 h-8 text-cyan-400" />
+          Eging Wind Shadow
+        </h1>
+        <div className="ml-auto flex items-center gap-3">
+          {/* Edit Mode Toggle */}
+          <button 
+            onClick={() => setIsEditMode(!isEditMode)}
+            className={`flex items-center gap-1.5 text-sm font-bold py-1.5 px-3 rounded-md transition-all ${isEditMode ? 'bg-amber-500/20 text-amber-400 border border-amber-500/50 shadow-[0_0_10px_rgba(245,158,11,0.3)]' : 'bg-slate-800/80 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-slate-200'}`}
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            <Pencil className={`w-4 h-4 ${isEditMode ? 'animate-bounce' : ''}`} />
+            ポイント登録
+          </button>
+          
+          <button 
+            onClick={handleExportJson}
+            className={`flex items-center gap-1.5 text-sm font-bold py-1.5 px-3 rounded-md transition-colors bg-slate-800/80 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-slate-200`}
+            title="ポイントデータをエクスポート"
           >
-            Documentation
-          </a>
+            <Copy className="w-4 h-4" />
+            エクスポート
+          </button>
+
+          <div className="w-px h-6 bg-slate-700/80 mx-1"></div>
+
+          <button 
+            onClick={() => setShowFilters(!showFilters)}
+            className={`flex items-center gap-1.5 text-sm font-bold py-1.5 px-3 rounded-md transition-colors ${showFilters ? 'bg-cyan-600 text-white' : 'bg-slate-800/80 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-slate-200'}`}
+          >
+            <Filter className="w-4 h-4" />
+            フィルター
+          </button>
+          
+          <button 
+            onClick={() => setIsSpringMode(!isSpringMode)}
+            className={`flex items-center gap-1.5 text-sm font-bold py-1.5 px-3 rounded-md transition-colors ${isSpringMode ? 'bg-pink-500/20 text-pink-400 border border-pink-500/50 shadow-[0_0_10px_rgba(236,72,153,0.3)]' : 'bg-slate-800/80 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-slate-200'}`}
+          >
+            <Flower2 className={`w-4 h-4 ${isSpringMode ? 'animate-pulse' : ''}`} />
+            春イカモード
+          </button>
+          
+          <button 
+            onClick={handleGetLocation}
+            disabled={isLocating}
+            className="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-1.5 px-3 rounded-md transition-colors disabled:opacity-50"
+          >
+            {isLocating ? <Loader2 className="w-4 h-4 animate-spin" /> : <MapPin className="w-4 h-4" />}
+            現在地へ移動
+          </button>
+          
+          <Badge variant="outline" className="bg-slate-800 border-slate-700 text-slate-300 text-base py-1 px-3 cursor-pointer hover:bg-slate-700" onClick={() => setSelectedPointId(null)}>
+            全体に戻る
+          </Badge>
         </div>
+      </header>
+
+      {/* Main Content Area */}
+      <main className="flex-1 flex relative">
+        {/* Map Area */}
+        <div className="flex-1 bg-slate-950 relative">
+          <Map 
+            pointsData={customPoints}
+            pointWinds={currentPointWinds} 
+            selectedPointId={selectedPointId}
+            onSelectPoint={setSelectedPointId}
+            currentLocation={currentLocation}
+            isSpringMode={isSpringMode}
+            filters={filters}
+            isEditMode={isEditMode}
+            onMapClick={(latlng: {lat: number, lng: number}) => setNewPointLocation(latlng)}
+          />
+        </div>
+
+        {/* Filter Panel */}
+        <div className={`absolute top-6 right-6 w-[340px] z-[60] transition-all duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] ${showFilters ? 'translate-x-0 opacity-100' : 'translate-x-12 opacity-0 pointer-events-none'}`}>
+          <Card className="bg-slate-900/95 backdrop-blur-xl border-slate-700/60 shadow-2xl rounded-2xl overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-cyan-500 to-blue-600"></div>
+            <CardHeader className="pb-3 pt-5 border-b border-slate-800/80">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base font-bold text-slate-200 flex items-center gap-2 tracking-wide">
+                  <SlidersHorizontal className="w-5 h-5 text-cyan-400" />
+                  高度フィルター
+                </CardTitle>
+                <button onClick={() => setShowFilters(false)} className="text-slate-400 hover:text-white transition-colors bg-slate-800 hover:bg-slate-700 p-1 rounded-md">
+                  <X className="w-4 h-4"/>
+                </button>
+              </div>
+            </CardHeader>
+            <CardContent className="pt-5 flex flex-col gap-6">
+              {/* Wind Speed Slider */}
+              <div className="flex flex-col gap-3">
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-slate-300 font-semibold flex items-center gap-1.5">
+                    許容風速
+                  </span>
+                  <span className="text-cyan-400 font-bold bg-cyan-950/50 px-2 py-0.5 rounded text-xs border border-cyan-800/50">
+                    {filters.maxWindSpeed} m/s 以下
+                  </span>
+                </div>
+                <input 
+                  type="range" min="1" max="10" step="1" 
+                  value={filters.maxWindSpeed} 
+                  onChange={e => setFilters({...filters, maxWindSpeed: Number(e.target.value)})}
+                  className="w-full accent-cyan-500 h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer"
+                />
+                <div className="flex justify-between text-[10px] text-slate-500 px-1">
+                  <span>1m/s</span>
+                  <span>10m/s</span>
+                </div>
+              </div>
+
+              {/* Wind Tolerance */}
+              <div className="flex flex-col gap-3">
+                <span className="text-slate-300 text-sm font-semibold">風向きの許容度</span>
+                <div className="flex flex-col gap-1.5">
+                  <button 
+                    onClick={() => setFilters({...filters, windTolerance: "safe_only"})}
+                    className={`text-left text-xs px-3 py-2 rounded border transition-colors ${filters.windTolerance === "safe_only" ? 'bg-cyan-900/40 border-cyan-500 text-cyan-300' : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
+                  >
+                    🔵 完全に風裏（追い風）のみ
+                  </button>
+                  <button 
+                    onClick={() => setFilters({...filters, windTolerance: "allow_normal"})}
+                    className={`text-left text-xs px-3 py-2 rounded border transition-colors ${filters.windTolerance === "allow_normal" ? 'bg-cyan-900/40 border-cyan-500 text-cyan-300' : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
+                  >
+                    ⚪️ 横風・微風（通常）まで許容
+                  </button>
+                  <button 
+                    onClick={() => setFilters({...filters, windTolerance: "all"})}
+                    className={`text-left text-xs px-3 py-2 rounded border transition-colors ${filters.windTolerance === "all" ? 'bg-cyan-900/40 border-cyan-500 text-cyan-300' : 'bg-slate-800/50 border-slate-700 text-slate-400 hover:bg-slate-700'}`}
+                  >
+                    🔴 すべて表示（強風も含む）
+                  </button>
+                </div>
+              </div>
+
+              {/* Feature Toggles */}
+              <div className="flex flex-col gap-3">
+                <span className="text-slate-300 text-sm font-semibold">地形・設備条件</span>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { id: "night_light", label: "💡 常夜灯あり" },
+                    { id: "parking", label: "🚗 駐車場あり" },
+                    { id: "has_seaweed", label: "🌿 藻場あり" },
+                    { id: "shallow", label: "🌊 シャロー" }
+                  ].map(feature => {
+                    const isActive = filters.requiredFeatures.includes(feature.id);
+                    return (
+                      <button
+                        key={feature.id}
+                        onClick={() => {
+                          if (isActive) {
+                            setFilters({...filters, requiredFeatures: filters.requiredFeatures.filter(f => f !== feature.id)});
+                          } else {
+                            setFilters({...filters, requiredFeatures: [...filters.requiredFeatures, feature.id]});
+                          }
+                        }}
+                        className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${isActive ? 'bg-cyan-900/50 border-cyan-500 text-cyan-300 font-bold shadow-[0_0_8px_rgba(6,182,212,0.3)]' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-700 hover:text-slate-200'}`}
+                      >
+                        {feature.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Floating Info Panel */}
+        <div className={`absolute top-6 left-6 w-[460px] flex flex-col gap-4 z-50 pointer-events-none transition-all duration-300`}>
+          <Card className="bg-slate-900/90 backdrop-blur-xl border-slate-700/60 shadow-2xl pointer-events-auto overflow-hidden rounded-2xl">
+            <div className={`absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r ${selectedPointId ? 'from-green-400 to-cyan-500' : 'from-blue-500 to-cyan-400'}`}></div>
+            <CardHeader className="pb-2 pt-6">
+              <CardTitle className="text-lg font-bold text-slate-400 tracking-wider flex items-center justify-between">
+                {dashboardTitle}
+                {loading && <Loader2 className="w-5 h-5 animate-spin text-cyan-500" />}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pb-8">
+                <div className="flex flex-col gap-6">
+                
+                {/* Visual Wind Indicator (Windy style) */}
+                <div className="flex items-center justify-between mt-2">
+                  <div className="flex items-center gap-6 text-slate-200">
+                    {/* Compass / Arrow */}
+                    <div className="w-24 h-24 rounded-full bg-slate-800/80 border-2 border-slate-600/50 flex items-center justify-center relative shadow-inner">
+                      {/* N/S/E/W Markers */}
+                      <span className="absolute top-1 text-[10px] text-slate-500 font-bold">N</span>
+                      <span className="absolute bottom-1 text-[10px] text-slate-500 font-bold">S</span>
+                      <span className="absolute right-1.5 text-[10px] text-slate-500 font-bold">E</span>
+                      <span className="absolute left-1.5 text-[10px] text-slate-500 font-bold">W</span>
+                      
+                      {displayWind ? (
+                        <div 
+                          className="transition-transform duration-1000 ease-out flex items-center justify-center"
+                          style={{ transform: `rotate(${displayWind.angle + 180}deg)` }}
+                        >
+                          <ArrowUp className="w-12 h-12 text-cyan-400 drop-shadow-[0_0_8px_rgba(34,211,238,0.8)]" strokeWidth={3} />
+                        </div>
+                      ) : (
+                        <div className="w-4 h-4 rounded-full bg-slate-600"></div>
+                      )}
+                    </div>
+                    
+                    {/* Speed */}
+                    <div className="flex flex-col justify-center">
+                      <div className="text-sm font-semibold text-slate-400 mb-[-4px]">
+                        {displayWind ? getWindDirectionString(displayWind.angle) + "からの風" : "---"}
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="font-black text-6xl tracking-tighter text-white drop-shadow-md">
+                          {displayWind ? displayWind.speed.toFixed(1) : '--'}
+                        </span>
+                        <span className="text-2xl font-bold text-slate-400">m/s</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Weather Info */}
+                {displayWind && (
+                  <div className="flex items-center justify-between bg-slate-800/40 rounded-xl p-4 border border-slate-700/50">
+                    {(() => {
+                      const weather = getWeatherInfo(displayWind.weather_code);
+                      const Icon = weather.icon;
+                      return (
+                        <div className="flex items-center gap-4">
+                          <div className="bg-slate-900/60 p-3 rounded-full shadow-inner">
+                            <Icon className={`w-8 h-8 ${weather.color}`} />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-slate-400">{weather.text}</span>
+                            <div className="flex items-baseline gap-1">
+                              <span className="text-3xl font-black text-slate-100">{displayWind.temperature.toFixed(1)}</span>
+                              <span className="text-lg font-bold text-slate-400">°C</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                    <div className="flex flex-col items-end border-l border-slate-700/80 pl-6">
+                      <span className="text-sm font-semibold text-slate-400">降水確率</span>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-3xl font-black text-blue-400">{displayWind.precipitation_prob}</span>
+                        <span className="text-lg font-bold text-blue-500/70">%</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-6 border-t border-slate-700/80 pt-6 mt-2">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-slate-400 text-lg font-bold">
+                      <Moon className="w-6 h-6 text-yellow-400/90" />
+                      Moon
+                    </div>
+                    <span className="text-xl font-bold text-slate-100">中潮 (半月)</span>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center gap-2 text-slate-400 text-lg font-bold">
+                      <Droplets className="w-6 h-6 text-cyan-400/90" />
+                      Tide
+                    </div>
+                    <span className="text-xl font-bold text-slate-100">満潮 18:30</span>
+                  </div>
+                </div>
+
+                {/* Time Slider (Forecast) */}
+                <div className="border-t border-slate-700/80 pt-5 mt-2">
+                  <div className="text-sm font-semibold text-slate-400 mb-3">風予測（タイムスライダー）</div>
+                  <div className="flex items-center bg-slate-950/50 rounded-lg p-1 border border-slate-700/50">
+                    {[0, 3, 6].map((offset) => (
+                      <button
+                        key={offset}
+                        onClick={() => setTimeOffset(offset as 0 | 3 | 6)}
+                        className={`flex-1 py-2 text-sm font-bold rounded-md transition-all ${
+                          timeOffset === offset
+                            ? 'bg-blue-600 text-white shadow-md'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+                        }`}
+                      >
+                        {offset === 0 ? "現在" : `${offset}時間後`}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* New Point Registration Modal */}
+        {newPointLocation && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[200] flex items-center justify-center p-4">
+            <Card className="w-full max-w-md bg-slate-900 border-slate-700 shadow-2xl rounded-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+              <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-amber-400 to-orange-500"></div>
+              <CardHeader className="pb-4 pt-6 border-b border-slate-800">
+                <CardTitle className="text-xl font-bold text-slate-100 flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-amber-400" />
+                  新規ポイントの登録
+                </CardTitle>
+                <div className="text-xs text-slate-400 mt-1 font-mono">
+                  Lat: {newPointLocation.lat.toFixed(5)}, Lng: {newPointLocation.lng.toFixed(5)}
+                </div>
+              </CardHeader>
+              <CardContent className="pt-6 flex flex-col gap-5">
+                {/* Point Name */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-semibold text-slate-300">ポイント名</label>
+                  <input 
+                    type="text" 
+                    value={formName}
+                    onChange={(e) => setFormName(e.target.value)}
+                    placeholder="例: 〇〇漁港 外波止"
+                    className="bg-slate-950 border border-slate-700 text-slate-100 p-2.5 rounded-md focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all"
+                  />
+                </div>
+
+                {/* Wind Angles */}
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-semibold text-slate-300">風裏となる角度 (0〜360度)</label>
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1 flex items-center gap-2">
+                      <span className="text-xs text-slate-500 w-8">Min:</span>
+                      <input 
+                        type="number" min="0" max="360"
+                        value={formSafeWindMin} onChange={e => setFormSafeWindMin(Number(e.target.value))}
+                        className="w-full bg-slate-950 border border-slate-700 text-slate-100 p-2 rounded-md focus:border-amber-500 outline-none"
+                      />
+                    </div>
+                    <div className="flex-1 flex items-center gap-2">
+                      <span className="text-xs text-slate-500 w-8">Max:</span>
+                      <input 
+                        type="number" min="0" max="360"
+                        value={formSafeWindMax} onChange={e => setFormSafeWindMax(Number(e.target.value))}
+                        className="w-full bg-slate-950 border border-slate-700 text-slate-100 p-2 rounded-md focus:border-amber-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Features */}
+                <div className="flex flex-col gap-3 mt-2">
+                  <label className="text-sm font-semibold text-slate-300">地形・設備タグ</label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <input type="checkbox" checked={formHasSeaweed} onChange={e => setFormHasSeaweed(e.target.checked)} className="accent-amber-500 w-4 h-4 cursor-pointer" />
+                      <span className="text-sm text-slate-400 group-hover:text-slate-200 transition-colors">🌿 藻場あり</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <input type="checkbox" checked={formShallow} onChange={e => setFormShallow(e.target.checked)} className="accent-amber-500 w-4 h-4 cursor-pointer" />
+                      <span className="text-sm text-slate-400 group-hover:text-slate-200 transition-colors">🌊 シャローエリア</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <input type="checkbox" checked={formFeatures.includes("night_light")} onChange={e => {
+                        if (e.target.checked) setFormFeatures([...formFeatures, "night_light"]);
+                        else setFormFeatures(formFeatures.filter(f => f !== "night_light"));
+                      }} className="accent-amber-500 w-4 h-4 cursor-pointer" />
+                      <span className="text-sm text-slate-400 group-hover:text-slate-200 transition-colors">💡 常夜灯あり</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer group">
+                      <input type="checkbox" checked={formFeatures.includes("parking")} onChange={e => {
+                        if (e.target.checked) setFormFeatures([...formFeatures, "parking"]);
+                        else setFormFeatures(formFeatures.filter(f => f !== "parking"));
+                      }} className="accent-amber-500 w-4 h-4 cursor-pointer" />
+                      <span className="text-sm text-slate-400 group-hover:text-slate-200 transition-colors">🚗 駐車場あり</span>
+                    </label>
+                  </div>
+                </div>
+
+              </CardContent>
+              <CardFooter className="flex justify-end gap-3 pt-4 border-t border-slate-800 pb-6 pr-6">
+                <button 
+                  onClick={() => setNewPointLocation(null)}
+                  className="px-4 py-2 text-sm font-bold text-slate-400 hover:text-white transition-colors"
+                >
+                  キャンセル
+                </button>
+                <button 
+                  onClick={handleSavePoint}
+                  disabled={!formName}
+                  className="flex items-center gap-2 px-5 py-2 text-sm font-bold bg-amber-600 hover:bg-amber-500 text-white rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(217,119,6,0.4)]"
+                >
+                  <Save className="w-4 h-4" />
+                  マップに追加
+                </button>
+              </CardFooter>
+            </Card>
+          </div>
+        )}
       </main>
     </div>
-  );
+  )
 }
