@@ -68,7 +68,7 @@ export default function TideChart({ data, currentHour, currentLevel }: TideChart
           
           {/* 現在時刻の基準縦線 */}
           <ReferenceLine 
-            x={currentHour} 
+            x={Math.floor(currentHour)} 
             stroke="#ef4444" 
             strokeWidth={1.5}
             strokeDasharray="4 3"
