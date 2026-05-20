@@ -297,6 +297,8 @@ export default function Home() {
     });
   };
 
+  const isOverlayActive = showTideModal || showMenu || !!newPointLocation || (isMobile && isPanelExpanded);
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-slate-950 text-slate-200">
       {/* Header */}
@@ -436,8 +438,10 @@ export default function Home() {
 
           {/* マップ中央の照準十字カーソル */}
           <div 
-            className="absolute inset-0 pointer-events-none flex items-center justify-center"
-            style={{ zIndex: 9999 }}
+            className={`absolute inset-0 pointer-events-none flex items-center justify-center transition-all duration-300 ease-in-out ${
+              isOverlayActive ? 'opacity-0 scale-90' : 'opacity-100 scale-100'
+            }`}
+            style={{ zIndex: 40 }}
           >
             <div className="relative flex items-center justify-center">
               {/* 横線 */}
