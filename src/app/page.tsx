@@ -318,7 +318,7 @@ export default function Home() {
             className={`flex items-center gap-1.5 text-xs md:text-sm font-bold py-1.5 px-2.5 md:px-3 rounded-lg transition-all ${isSpringMode ? 'bg-pink-500/20 text-pink-400 border border-pink-500/50 shadow-[0_0_10px_rgba(236,72,153,0.3)]' : 'bg-slate-800/80 text-slate-400 border border-slate-700 hover:bg-slate-700 hover:text-slate-200'}`}
           >
             <Flower2 className={`w-4 h-4 ${isSpringMode ? 'animate-pulse' : ''}`} />
-            {!isMobile && "春イカモード"}
+            {isMobile ? "春イカ" : "春イカモード"}
           </button>
           
           {/* フィルターボタン */}
