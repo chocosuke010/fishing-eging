@@ -74,10 +74,14 @@ export default function Home() {
     return () => window.removeEventListener("resize", handleResize);
   }, []);
 
-  // マーカーが選択されたら、モバイルでは自動的にパネルを展開する
+  // マーカー選択時・解除時のモバイルパネル自動制御
   useEffect(() => {
-    if (selectedPointId && isMobile) {
-      setIsPanelExpanded(true);
+    if (isMobile) {
+      if (selectedPointId) {
+        setIsPanelExpanded(true);
+      } else {
+        setIsPanelExpanded(false);
+      }
     }
   }, [selectedPointId, isMobile]);
 
@@ -465,20 +469,20 @@ export default function Home() {
             ? `absolute bottom-0 left-0 right-0 w-full z-50 pointer-events-auto transition-all duration-300`
             : `absolute top-6 left-6 w-[460px] flex flex-col gap-4 z-50 pointer-events-none transition-all duration-300`
         }>
-          <Card className={`bg-slate-900/90 backdrop-blur-xl border-slate-700/60 shadow-2xl pointer-events-auto overflow-hidden ${
+          <Card className={`bg-slate-900/90 backdrop-blur-xl border-slate-700/60 shadow-2xl pointer-events-auto overflow-hidden flex flex-col ${
             isMobile 
-              ? `rounded-t-3xl border-t border-slate-800/80 transition-all duration-300 ${isPanelExpanded ? 'max-h-[75vh]' : 'h-[80px]'}`
+              ? `rounded-t-3xl border-t border-slate-800/80 transition-all duration-300 ${isPanelExpanded ? 'max-h-[60vh]' : 'h-[80px]'}`
               : `rounded-2xl`
           }`}>
-            <div className={`absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r ${selectedPointId ? 'from-green-400 to-cyan-500' : 'from-blue-500 to-cyan-400'}`}></div>
+            <div className={`absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r ${selectedPointId ? 'from-green-400 to-cyan-500' : 'from-blue-500 to-cyan-400'} z-10`}></div>
             
             {/* Mobile Expand/Collapse Bar */}
             {isMobile && (
               <div 
-                className="w-full flex justify-center py-2 cursor-pointer hover:bg-slate-800/30"
+                className="w-full flex justify-center pt-3 pb-2 cursor-pointer hover:bg-slate-800/30 shrink-0 relative z-10"
                 onClick={() => setIsPanelExpanded(!isPanelExpanded)}
               >
-                <div className="w-12 h-1 bg-slate-700 rounded-full"></div>
+                <div className="w-12 h-1.5 bg-slate-500 rounded-full"></div>
               </div>
             )}
 
@@ -535,20 +539,33 @@ export default function Home() {
               </div>
             ) : (
               // 通常表示（デスクトップ、およびモバイルの展開時）
-              <div className={`flex flex-col px-5 pb-6 pt-2 ${isMobile ? 'max-h-[70vh] overflow-y-auto' : ''}`}>
-                <CardHeader className="p-0 pb-3 flex flex-row items-center justify-between">
-                  <CardTitle className="text-lg font-bold text-slate-400 tracking-wider flex items-center justify-between w-full">
-                    <span>{dashboardTitle}</span>
+              <div className={`flex flex-col px-5 pb-6 pt-2 overflow-y-auto flex-1`}>
+                <CardHeader className="p-0 pb-3 flex flex-row items-center justify-between sticky top-0 bg-slate-900/95 backdrop-blur z-20 pt-1">
+                  <CardTitle className="text-lg font-bold text-slate-400 tracking-wider flex items-center gap-2">
+                    <span className="truncate max-w-[200px]">{dashboardTitle}</span>
                     {loading && <Loader2 className="w-5 h-5 animate-spin text-cyan-500" />}
                   </CardTitle>
-                  {isMobile && selectedPointId && (
-                    <button 
-                      onClick={() => setSelectedPointId(null)}
-                      className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-350 border border-slate-700 font-bold py-1.5 px-3 rounded-lg"
-                    >
-                      全体に戻る
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {isMobile && selectedPointId && (
+                      <button 
+                        onClick={() => setSelectedPointId(null)}
+                        className="text-xs bg-slate-800 hover:bg-slate-700 text-slate-350 border border-slate-700 font-bold py-1.5 px-3 rounded-lg hidden sm:block"
+                      >
+                        全体に戻る
+                      </button>
+                    )}
+                    {isMobile && (
+                      <button
+                        onClick={() => {
+                          if (selectedPointId) setSelectedPointId(null);
+                          else setIsPanelExpanded(false);
+                        }}
+                        className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-full transition-colors border border-slate-700"
+                      >
+                        <X className="w-5 h-5" />
+                      </button>
+                    )}
+                  </div>
                 </CardHeader>
 
                 {selectedPoint && (
