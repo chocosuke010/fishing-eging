@@ -69,14 +69,30 @@ export default function Home() {
   const [customPoints, setCustomPoints] = useState<any[]>(pointsData);
   const [isEditMode, setIsEditMode] = useState(false);
   const [newPointLocation, setNewPointLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [editingPointId, setEditingPointId] = useState<string | null>(null);
 
   // Form State
   const [formName, setFormName] = useState("");
-  const [formSafeWindMin, setFormSafeWindMin] = useState(0);
-  const [formSafeWindMax, setFormSafeWindMax] = useState(360);
+  const [formSafeWindDirections, setFormSafeWindDirections] = useState<string[]>([]);
   const [formFeatures, setFormFeatures] = useState<string[]>([]);
   const [formHasSeaweed, setFormHasSeaweed] = useState(false);
   const [formShallow, setFormShallow] = useState(false);
+
+  // localStorage からのデータロード
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("aorinavi_custom_points");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          const customOnly = parsed.filter((p: any) => p.isCustom || p.id.startsWith("custom_port_"));
+          setCustomPoints([...pointsData, ...customOnly]);
+        } catch (e) {
+          console.error("Failed to load custom points from localStorage", e);
+        }
+      }
+    }
+  }, []);
 
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState<FilterState>({
@@ -269,33 +285,94 @@ export default function Home() {
   };
 
   const handleSavePoint = () => {
-    if (!newPointLocation || !formName) return;
+    if (!newPointLocation && !editingPointId) return;
+    if (!formName) return;
 
-    // 簡単な逆風（danger）の計算（safeの逆をざっくり設定）
-    const dangerMin = (formSafeWindMax + 0) % 360;
-    const dangerMax = (formSafeWindMin + 360) % 360; // 簡略化のため適当な範囲
+    let updatedPoints: any[];
+    if (editingPointId) {
+      // 編集処理
+      updatedPoints = customPoints.map(p => {
+        if (p.id === editingPointId) {
+          return {
+            ...p,
+            name: formName,
+            safeWindDirections: formSafeWindDirections,
+            max_wind_tolerance: 5.0,
+            features: formFeatures,
+            memo: formMemo,
+            spring_eging: {
+              ...p.spring_eging,
+              has_seaweed: formHasSeaweed,
+              seaweed_type: formHasSeaweed ? (p.spring_eging?.seaweed_type || "未設定") : "",
+              depth_type: formShallow ? "シャロー" : "ディープ"
+            }
+          };
+        }
+        return p;
+      });
+    } else {
+      // 新規作成処理
+      if (!newPointLocation) return;
+      const newPoint = {
+        id: `custom_port_${Date.now()}`,
+        name: formName,
+        coordinates: { lat: newPointLocation.lat, lng: newPointLocation.lng },
+        safeWindDirections: formSafeWindDirections,
+        max_wind_tolerance: 5.0,
+        features: formFeatures,
+        memo: formMemo,
+        isCustom: true,
+        spring_eging: {
+          has_seaweed: formHasSeaweed,
+          seaweed_type: formHasSeaweed ? "未設定" : "",
+          depth_type: formShallow ? "シャロー" : "ディープ"
+        }
+      };
+      updatedPoints = [...customPoints, newPoint];
+    }
 
-    const newPoint = {
-      id: `custom_port_${Date.now()}`,
-      name: formName,
-      coordinates: { lat: newPointLocation.lat, lng: newPointLocation.lng },
-      safe_wind_angles: [{ min: formSafeWindMin, max: formSafeWindMax }],
-      danger_wind_angles: [{ min: dangerMin, max: dangerMax }],
-      max_wind_tolerance: 5.0,
-      features: formFeatures,
-      memo: formMemo,
-      spring_eging: {
-        has_seaweed: formHasSeaweed,
-        seaweed_type: formHasSeaweed ? "未設定" : "",
-        depth_type: formShallow ? "シャロー" : "ディープ"
-      }
-    };
+    setCustomPoints(updatedPoints);
 
-    setCustomPoints([...customPoints, newPoint]);
+    // localStorageへ保存（カスタムポイントのみ）
+    const customOnly = updatedPoints.filter(p => p.isCustom || p.id.startsWith("custom_port_"));
+    localStorage.setItem("aorinavi_custom_points", JSON.stringify(customOnly));
+
+    // フォームとモーダルのクリア
+    handleCancelSave();
+  };
+
+  const handleCancelSave = () => {
     setNewPointLocation(null);
+    setEditingPointId(null);
     setFormName("");
+    setFormSafeWindDirections([]);
     setFormFeatures([]);
     setFormMemo("");
+    setFormHasSeaweed(false);
+    setFormShallow(false);
+  };
+
+  const handleEditPoint = (point: any) => {
+    setEditingPointId(point.id);
+    setFormName(point.name);
+    setFormSafeWindDirections(point.safeWindDirections || []);
+    setFormFeatures(point.features || []);
+    setFormMemo(point.memo || "");
+    setFormHasSeaweed(point.spring_eging?.has_seaweed || false);
+    setFormShallow(point.spring_eging?.depth_type.includes("シャロー") || false);
+    setNewPointLocation({ lat: point.coordinates.lat, lng: point.coordinates.lng });
+  };
+
+  const handleDeletePoint = (id: string) => {
+    if (!window.confirm("このポイントを削除してもよろしいですか？")) return;
+
+    const updatedPoints = customPoints.filter(p => p.id !== id);
+    setCustomPoints(updatedPoints);
+
+    const customOnly = updatedPoints.filter(p => p.isCustom || p.id.startsWith("custom_port_"));
+    localStorage.setItem("aorinavi_custom_points", JSON.stringify(customOnly));
+
+    setSelectedPointId(null);
   };
 
   const handleExportJson = () => {
@@ -442,6 +519,8 @@ export default function Home() {
             isEditMode={isEditMode}
             onMapClick={handleMapClick}
             onMapMoveEnd={handleMapMoveEnd}
+            onEditPoint={handleEditPoint}
+            onDeletePoint={handleDeletePoint}
           />
 
           {/* マップ中央の照準十字カーソル */}
@@ -662,7 +741,7 @@ export default function Home() {
                 </CardHeader>
 
                 {selectedPoint && (
-                  <div className="mb-2">
+                  <div className="mb-2 flex flex-col gap-2">
                     <button
                       onClick={() => {
                         const url = `https://www.google.com/maps/dir/?api=1&destination=${selectedPoint.coordinates.lat},${selectedPoint.coordinates.lng}`;
@@ -673,6 +752,25 @@ export default function Home() {
                       <Car className="w-4 h-4 text-white animate-pulse" />
                       Googleマップでナビ
                     </button>
+                    
+                    {(selectedPoint.isCustom || selectedPoint.id.startsWith("custom_port_")) && (
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleEditPoint(selectedPoint)}
+                          className="flex-1 flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white text-xs font-bold py-2 rounded-xl transition-colors border border-slate-700/50"
+                        >
+                          <Pencil className="w-4 h-4 text-cyan-400" />
+                          編集
+                        </button>
+                        <button
+                          onClick={() => handleDeletePoint(selectedPoint.id)}
+                          className="flex-1 flex items-center justify-center gap-1.5 bg-red-950/40 hover:bg-red-900/40 text-red-450 hover:text-red-300 text-xs font-bold py-2 rounded-xl transition-colors border border-red-900/30"
+                        >
+                          <X className="w-4 h-4 text-red-400" />
+                          削除
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )}
                 
@@ -842,13 +940,13 @@ export default function Home() {
               <CardHeader className="pb-4 pt-6 border-b border-slate-800">
                 <CardTitle className="text-xl font-bold text-slate-100 flex items-center gap-2">
                   <MapPin className="w-5 h-5 text-amber-400" />
-                  新規ポイントの登録
+                  {editingPointId ? "ポイントの編集" : "新規ポイントの登録"}
                 </CardTitle>
                 <div className="text-xs text-slate-400 mt-1 font-mono">
                   Lat: {newPointLocation.lat.toFixed(5)}, Lng: {newPointLocation.lng.toFixed(5)}
                 </div>
               </CardHeader>
-              <CardContent className="pt-6 flex flex-col gap-5">
+              <CardContent className="pt-6 flex flex-col gap-5 max-h-[60vh] overflow-y-auto pr-1">
                 {/* Point Name */}
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-semibold text-slate-300">ポイント名</label>
@@ -861,25 +959,60 @@ export default function Home() {
                   />
                 </div>
 
-                {/* Wind Angles */}
+                {/* Wind Directions Compass Grid */}
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-semibold text-slate-300">風裏となる角度 (0〜360度)</label>
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 flex items-center gap-2">
-                      <span className="text-xs text-slate-500 w-8">Min:</span>
-                      <input 
-                        type="number" min="0" max="360"
-                        value={formSafeWindMin} onChange={e => setFormSafeWindMin(Number(e.target.value))}
-                        className="w-full bg-slate-950 border border-slate-700 text-slate-100 p-2 rounded-md focus:border-amber-500 outline-none"
-                      />
-                    </div>
-                    <div className="flex-1 flex items-center gap-2">
-                      <span className="text-xs text-slate-500 w-8">Max:</span>
-                      <input 
-                        type="number" min="0" max="360"
-                        value={formSafeWindMax} onChange={e => setFormSafeWindMax(Number(e.target.value))}
-                        className="w-full bg-slate-950 border border-slate-700 text-slate-100 p-2 rounded-md focus:border-amber-500 outline-none"
-                      />
+                  <label className="text-sm font-semibold text-slate-300">風裏になる風向き（複数選択可）</label>
+                  <p className="text-xs text-slate-500 leading-normal">
+                    背中から風を受けられる、または地形によって風が遮られる『釣りがしやすい風向き』を選択してください。（例：北側に山がある場合は「北」を選択）
+                  </p>
+                  
+                  <div className="flex justify-center my-2">
+                    <div className="grid grid-cols-3 gap-2 w-60 h-60 p-2.5 bg-slate-950/60 rounded-2xl border border-slate-800">
+                      {(() => {
+                        const directions = [
+                          { key: "北西", label: "NW" },
+                          { key: "北", label: "N" },
+                          { key: "北東", label: "NE" },
+                          { key: "西", label: "W" },
+                          { key: "center", label: "🧭" },
+                          { key: "東", label: "E" },
+                          { key: "南西", label: "SW" },
+                          { key: "南", label: "S" },
+                          { key: "南東", label: "SE" },
+                        ];
+                        
+                        return directions.map((d, idx) => {
+                          if (d.key === "center") {
+                            return (
+                              <div key={idx} className="flex items-center justify-center text-xl text-slate-500 bg-slate-900/30 rounded-xl select-none">
+                                {d.label}
+                              </div>
+                            );
+                          }
+                          const isSelected = formSafeWindDirections.includes(d.key);
+                          return (
+                            <button
+                              key={d.key}
+                              type="button"
+                              onClick={() => {
+                                if (isSelected) {
+                                  setFormSafeWindDirections(formSafeWindDirections.filter(dir => dir !== d.key));
+                                } else {
+                                  setFormSafeWindDirections([...formSafeWindDirections, d.key]);
+                                }
+                              }}
+                              className={`flex flex-col items-center justify-center rounded-xl border transition-all ${
+                                isSelected
+                                  ? "bg-amber-600 border-amber-500 text-white shadow-[0_0_10px_rgba(217,119,6,0.3)] scale-[1.03] font-black"
+                                  : "bg-slate-900 border-slate-800 text-slate-400 hover:border-slate-700 hover:bg-slate-850 hover:text-slate-200 text-xs font-semibold"
+                              }`}
+                            >
+                              <span className="text-[9px] text-slate-500 mb-0.5 font-light">{d.label}</span>
+                              <span className="text-xs">{d.key}</span>
+                            </button>
+                          );
+                        });
+                      })()}
                     </div>
                   </div>
                 </div>
@@ -926,9 +1059,9 @@ export default function Home() {
                 </div>
 
               </CardContent>
-              <CardFooter className="flex justify-end gap-3 pt-4 border-t border-slate-800 pb-6 pr-6">
+              <CardFooter className="flex justify-end gap-3 pt-4 border-t border-slate-800 pb-6 pr-6 shrink-0">
                 <button 
-                  onClick={() => setNewPointLocation(null)}
+                  onClick={handleCancelSave}
                   className="px-4 py-2 text-sm font-bold text-slate-400 hover:text-white transition-colors"
                 >
                   キャンセル
@@ -939,7 +1072,7 @@ export default function Home() {
                   className="flex items-center gap-2 px-5 py-2 text-sm font-bold bg-amber-600 hover:bg-amber-500 text-white rounded-md transition-all disabled:opacity-50 disabled:cursor-not-allowed shadow-[0_0_15px_rgba(217,119,6,0.4)]"
                 >
                   <Save className="w-4 h-4" />
-                  マップに追加
+                  {editingPointId ? "変更を保存" : "マップに追加"}
                 </button>
               </CardFooter>
             </Card>

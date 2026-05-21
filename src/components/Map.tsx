@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-import { Lightbulb, Car, Droplet, Leaf, Waves, Flower2 } from "lucide-react";
+import { Lightbulb, Car, Droplet, Leaf, Waves, Flower2, Pencil, X } from "lucide-react";
 import { getPointWindStatus } from "@/lib/wind-utils";
 
 export interface WindData {
@@ -27,6 +27,8 @@ interface MapProps {
   isEditMode?: boolean;
   onMapClick?: (latlng: {lat: number, lng: number}) => void;
   onMapMoveEnd?: (latlng: {lat: number, lng: number}) => void;
+  onEditPoint?: (point: any) => void;
+  onDeletePoint?: (id: string) => void;
 }
 
 // A component to catch map center moves and notify parent
@@ -148,7 +150,7 @@ function LocationMarker({ location }: { location: { lat: number, lng: number } |
   );
 }
 
-export default function Map({ pointsData, pointWinds, selectedPointId, onSelectPoint, currentLocation, isSpringMode, filters, isEditMode, onMapClick, onMapMoveEnd }: MapProps) {
+export default function Map({ pointsData, pointWinds, selectedPointId, onSelectPoint, currentLocation, isSpringMode, filters, isEditMode, onMapClick, onMapMoveEnd, onEditPoint, onDeletePoint }: MapProps) {
   // Center that can oversee Fukuoka, Saga, and Nagasaki (Itoshima, Yobuko, Hirado, Iki)
   const center: [number, number] = [33.4700, 129.7600];
   const [mounted, setMounted] = useState(false);
@@ -226,7 +228,8 @@ export default function Map({ pointsData, pointWinds, selectedPointId, onSelectP
               currentWind.angle,
               point.max_wind_tolerance,
               point.safe_wind_angles,
-              point.danger_wind_angles
+              point.danger_wind_angles,
+              point.safeWindDirections // 新規: 8方位風裏データ
             );
           }
 
@@ -262,6 +265,14 @@ export default function Map({ pointsData, pointWinds, selectedPointId, onSelectP
                     {status === "danger" && <span className="text-sm font-semibold text-red-400 bg-red-950/50 border border-red-800/50 px-2 py-1 rounded">✕ 強風・向かい風</span>}
                     {status === "normal" && <span className="text-sm font-semibold text-slate-300 bg-slate-800 border border-slate-700 px-2 py-1 rounded">△ 通常</span>}
                   </div>
+                  
+                  {point.safeWindDirections && point.safeWindDirections.length > 0 && (
+                    <div className="text-xs text-slate-400 mb-3 bg-slate-950/30 p-2 rounded border border-slate-800">
+                      <span className="font-bold text-cyan-400">風裏方位: </span>
+                      {point.safeWindDirections.join(", ")}
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap gap-2 mt-3">
                     {point.features.map((feature: string) => (
                       <FeatureBadge key={feature} feature={feature} />
@@ -306,6 +317,32 @@ export default function Map({ pointsData, pointWinds, selectedPointId, onSelectP
                       Googleマップでナビ
                     </button>
                   </div>
+
+                  {/* カスタムポイントの場合のみ編集・削除ボタンを表示 */}
+                  {(point.isCustom || point.id.startsWith("custom_port_")) && (
+                    <div className="flex gap-2 mt-2 pt-2 border-t border-slate-700/50">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onEditPoint) onEditPoint(point);
+                        }}
+                        className="flex-1 flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-bold py-1.5 px-2 rounded-lg transition-colors border border-slate-700/50"
+                      >
+                        <Pencil className="w-3 h-3 text-cyan-400" />
+                        編集
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (onDeletePoint) onDeletePoint(point.id);
+                        }}
+                        className="flex-1 flex items-center justify-center gap-1.5 bg-red-950/40 hover:bg-red-900/40 text-red-450 hover:text-red-300 text-xs font-bold py-1.5 px-2 rounded-lg transition-colors border border-red-900/30"
+                      >
+                        <X className="w-3 h-3 text-red-400" />
+                        削除
+                      </button>
+                    </div>
+                  )}
                 </div>
               </Popup>
             </Marker>
