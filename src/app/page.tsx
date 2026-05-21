@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState, useMemo, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Moon, Droplets, MapPin, Loader2, ArrowUp, Flower2, Filter, SlidersHorizontal, X, Pencil, Save, Copy, Car } from "lucide-react"
@@ -89,6 +89,14 @@ export default function Home() {
   const [isMobile, setIsMobile] = useState(false);
   const [isPanelExpanded, setIsPanelExpanded] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+
+  const handleMapClick = useCallback((latlng: {lat: number, lng: number}) => {
+    setNewPointLocation(latlng);
+  }, []);
+
+  const handleMapMoveEnd = useCallback((latlng: {lat: number, lng: number}) => {
+    setMapCenter(latlng);
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -432,8 +440,8 @@ export default function Home() {
             isSpringMode={isSpringMode}
             filters={filters}
             isEditMode={isEditMode}
-            onMapClick={(latlng: {lat: number, lng: number}) => setNewPointLocation(latlng)}
-            onMapMoveEnd={(latlng: {lat: number, lng: number}) => setMapCenter(latlng)}
+            onMapClick={handleMapClick}
+            onMapMoveEnd={handleMapMoveEnd}
           />
 
           {/* マップ中央の照準十字カーソル */}
