@@ -6,44 +6,8 @@ import { Badge } from "@/components/ui/badge"
 import { Moon, Droplets, MapPin, Loader2, ArrowUp, Flower2, Filter, SlidersHorizontal, X, Pencil, Save, Copy, Car } from "lucide-react"
 import dynamic from "next/dynamic"
 import pointsData from "@/data/points.json"
-import cleanedPointsData from "@/data/cleaned_points.json"
 import { getWindDirectionString } from "@/lib/wind-utils"
 import { getWeatherInfo } from "@/lib/weather-utils"
-
-// 新規スクレイピングデータのスキーマ正規化
-const normalizedCleanedPoints = cleanedPointsData.map((p: any) => {
-  // 潮汐オフセット判定ロジックと連携するためのIDプレフィックス
-  let idPrefix = "port_fukuoka_";
-  if (p.name.includes("壱岐") || p.name.includes("郷ノ浦")) {
-    idPrefix = "port_iki_";
-  } else if (p.name.includes("佐賀県") || p.name.includes("呼子") || p.name.includes("加部島")) {
-    idPrefix = "port_saga_";
-  } else if (p.name.includes("長崎") || p.name.includes("平戸") || p.name.includes("宮ノ浦")) {
-    idPrefix = "port_nagasaki_";
-  }
-
-  return {
-    id: `${idPrefix}${p.id}`,
-    name: p.name,
-    coordinates: {
-      lat: p.lat,
-      lng: p.lng,
-    },
-    safe_wind_angles: [{ min: 0, max: 360 }],
-    danger_wind_angles: [],
-    max_wind_tolerance: 5.0,
-    features: p.tags || ["スクレイピングデータ"],
-    memo: p.memo || "",
-    spring_eging: {
-      has_seaweed: false,
-      seaweed_type: "",
-      depth_type: "未調査"
-    }
-  };
-});
-
-// 既存データと新規データを合流
-const initialPoints = [...pointsData, ...normalizedCleanedPoints];
 
 const Map = dynamic(() => import("@/components/Map"), { ssr: false })
 const TideChart = dynamic(() => import("@/components/TideChart"), { ssr: false })
@@ -102,7 +66,7 @@ export default function Home() {
   const [isSpringMode, setIsSpringMode] = useState(false);
   
   // Point Registration Mode State
-  const [customPoints, setCustomPoints] = useState<any[]>(initialPoints);
+  const [customPoints, setCustomPoints] = useState<any[]>(pointsData);
   const [isEditMode, setIsEditMode] = useState(false);
   const [newPointLocation, setNewPointLocation] = useState<{lat: number, lng: number} | null>(null);
 
