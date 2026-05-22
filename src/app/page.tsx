@@ -3,8 +3,9 @@
 import { useEffect, useState, useMemo, useCallback } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Moon, Droplets, MapPin, Loader2, ArrowUp, Flower2, Filter, SlidersHorizontal, X, Pencil, Save, Copy, Car } from "lucide-react"
+import { Moon, Droplets, MapPin, Loader2, ArrowUp, Flower2, Filter, SlidersHorizontal, X, Pencil, Save, Copy, Car, Cloud, Globe, LogOut, DownloadCloud, UploadCloud, CheckCircle2, AlertTriangle, Info } from "lucide-react"
 import dynamic from "next/dynamic"
+import Script from "next/script"
 import pointsData from "@/data/points.json"
 import { getWindDirectionString } from "@/lib/wind-utils"
 import { getWeatherInfo } from "@/lib/weather-utils"
@@ -28,6 +29,8 @@ export interface ForecastData {
   3: WindData;
   6: WindData;
 }
+
+const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 
 export interface FilterState {
   maxWindSpeed: number;
@@ -75,8 +78,15 @@ export default function Home() {
   const [formName, setFormName] = useState("");
   const [formSafeWindDirections, setFormSafeWindDirections] = useState<string[]>([]);
   const [formFeatures, setFormFeatures] = useState<string[]>([]);
-  const [formHasSeaweed, setFormHasSeaweed] = useState(false);
   const [formShallow, setFormShallow] = useState(false);
+  const [formHasSeaweed, setFormHasSeaweed] = useState(false);
+
+  // Google Drive Sync States
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [isGoogleLinked, setIsGoogleLinked] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [showSyncPopover, setShowSyncPopover] = useState(false);
+  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
 
   // localStorage からのデータロード
   useEffect(() => {
@@ -105,6 +115,225 @@ export default function Home() {
   const [isMobile, setIsMobile] = useState(false);
   const [isPanelExpanded, setIsPanelExpanded] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+
+  // トースト表示用の補助関数
+  const showToast = useCallback((message: string, type: "success" | "error" | "info" = "info") => {
+    setToast({ message, type });
+  }, []);
+
+  // トースト自動消去用
+  useEffect(() => {
+    if (toast) {
+      const timer = setTimeout(() => {
+        setToast(null);
+      }, 4000);
+      return () => clearTimeout(timer);
+    }
+  }, [toast]);
+
+  // Google認証連携処理
+  const handleLinkGoogle = () => {
+    if (typeof window === "undefined" || !(window as any).google) {
+      showToast("Google認証ライブラリをロード中です。数秒待って再試行してください。", "info");
+      return;
+    }
+    
+    let clientId = GOOGLE_CLIENT_ID;
+    
+    if (!clientId) {
+      const customId = window.prompt(
+        "Google Cloud OAuth クライアントIDが環境変数(NEXT_PUBLIC_GOOGLE_CLIENT_ID)に設定されていません。\nGoogle Cloud Consoleで取得したクライアントIDを入力してください。:\n(例: xxx.apps.googleusercontent.com)"
+      );
+      if (!customId) return;
+      clientId = customId;
+    }
+
+    try {
+      const client = (window as any).google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: "https://www.googleapis.com/auth/drive.file",
+        callback: (response: any) => {
+          if (response.error) {
+            console.error("GIS Error:", response);
+            showToast(`連携エラー: ${response.error_description || response.error}`, "error");
+            return;
+          }
+          if (response.access_token) {
+            setAccessToken(response.access_token);
+            setIsGoogleLinked(true);
+            showToast("Google Driveと正常に連携しました！", "success");
+            setShowSyncPopover(true);
+          }
+        },
+      });
+      client.requestAccessToken({ prompt: "consent" });
+    } catch (err: any) {
+      console.error("GIS Init Error:", err);
+      showToast("Google連携の初期化に失敗しました。クライアントIDが正しいか確認してください。", "error");
+    }
+  };
+
+  // Google Driveへバックアップ
+  const backupToGoogleDrive = async () => {
+    if (!accessToken) {
+      showToast("先にGoogle連携を行ってください。", "error");
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      const query = encodeURIComponent("name='aorinavi_backup.json' and trashed=false");
+      const searchRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id)`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      if (!searchRes.ok) {
+        throw new Error(`ファイル検索エラー: ${searchRes.statusText}`);
+      }
+
+      const searchData = await searchRes.json();
+      const existingFile = searchData.files?.[0];
+      const fileId = existingFile?.id;
+
+      const saved = localStorage.getItem("aorinavi_custom_points") || "[]";
+
+      if (fileId) {
+        const uploadRes = await fetch(
+          `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: saved,
+          }
+        );
+
+        if (!uploadRes.ok) {
+          throw new Error(`上書き保存エラー: ${uploadRes.statusText}`);
+        }
+      } else {
+        const createRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              name: "aorinavi_backup.json",
+              mimeType: "application/json",
+            }),
+          }
+        );
+
+        if (!createRes.ok) {
+          throw new Error(`新規作成エラー: ${createRes.statusText}`);
+        }
+
+        const createdFile = await createRes.json();
+        const newFileId = createdFile.id;
+
+        const uploadRes = await fetch(
+          `https://www.googleapis.com/upload/drive/v3/files/${newFileId}?uploadType=media`,
+          {
+            method: "PATCH",
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              "Content-Type": "application/json",
+            },
+            body: saved,
+          }
+        );
+
+        if (!uploadRes.ok) {
+          throw new Error(`中身のアップロードエラー: ${uploadRes.statusText}`);
+        }
+      }
+
+      showToast("Google Driveにデータをバックアップしました！", "success");
+    } catch (err: any) {
+      console.error("Backup to Google Drive failed:", err);
+      showToast(`バックアップに失敗しました: ${err.message || err}`, "error");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Google Driveからデータを復元
+  const restoreFromGoogleDrive = async () => {
+    if (!accessToken) {
+      showToast("先にGoogle連携を行ってください。", "error");
+      return;
+    }
+
+    if (!window.confirm("Google Driveからバックアップを復元します。\nローカルに保存されているカスタムポイントが上書きされます。よろしいですか？")) {
+      return;
+    }
+
+    setIsSyncing(true);
+    try {
+      const query = encodeURIComponent("name='aorinavi_backup.json' and trashed=false");
+      const searchRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id)`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      if (!searchRes.ok) {
+        throw new Error(`ファイル検索エラー: ${searchRes.statusText}`);
+      }
+
+      const searchData = await searchRes.json();
+      const file = searchData.files?.[0];
+
+      if (!file) {
+        showToast("Google Drive上にバックアップデータが見つかりませんでした。", "error");
+        return;
+      }
+
+      const downloadRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      if (!downloadRes.ok) {
+        throw new Error(`データダウンロードエラー: ${downloadRes.statusText}`);
+      }
+
+      const backupData = await downloadRes.json();
+
+      if (!Array.isArray(backupData)) {
+        throw new Error("バックアップデータのフォーマットが不正です。");
+      }
+
+      localStorage.setItem("aorinavi_custom_points", JSON.stringify(backupData));
+      
+      const customOnly = backupData.filter((p: any) => p.isCustom || p.id.startsWith("custom_port_"));
+      setCustomPoints([...pointsData, ...customOnly]);
+
+      showToast("Google Driveからデータを正常に復元しました！", "success");
+    } catch (err: any) {
+      console.error("Restore from Google Drive failed:", err);
+      showToast(`復元に失敗しました: ${err.message || err}`, "error");
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   const handleMapClick = useCallback((latlng: {lat: number, lng: number}) => {
     setNewPointLocation(latlng);
@@ -448,6 +677,103 @@ export default function Home() {
                 <Copy className="w-4 h-4" />
                 エクスポート
               </button>
+
+              {/* Google Drive 同期ポップオーバー */}
+              <div className="relative">
+                <button
+                  onClick={() => setShowSyncPopover(!showSyncPopover)}
+                  className={`flex items-center gap-1.5 text-sm font-bold py-1.5 px-3 rounded-lg transition-all ${
+                    isGoogleLinked
+                      ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/50 shadow-[0_0_10px_rgba(16,185,129,0.2)]'
+                      : 'bg-slate-800/80 text-slate-350 border border-slate-700 hover:bg-slate-700 hover:text-slate-200'
+                  }`}
+                  title="Google Driveクラウド同期"
+                >
+                  <Cloud className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                  クラウド同期
+                  {isGoogleLinked && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  )}
+                </button>
+
+                {showSyncPopover && (
+                  <div className="absolute right-0 mt-2.5 w-72 bg-slate-900/95 backdrop-blur-md border border-slate-700/60 rounded-xl p-4 shadow-2xl z-[150] animate-in fade-in slide-in-from-top-2 duration-150 text-left">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-2.5 mb-3">
+                      <h4 className="text-sm font-bold text-slate-200 flex items-center gap-1.5">
+                        <Cloud className="w-4 h-4 text-cyan-400" />
+                        Google Drive 同期
+                      </h4>
+                      <button
+                        onClick={() => setShowSyncPopover(false)}
+                        className="text-slate-400 hover:text-white p-0.5 rounded bg-slate-850 hover:bg-slate-800 border border-slate-750 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="flex flex-col gap-3">
+                      {!isGoogleLinked ? (
+                        <>
+                          <p className="text-xs text-slate-400 leading-normal">
+                            Google Driveと連携し、カスタムポイントデータをクラウドにバックアップ・復元できます。
+                          </p>
+                          <button
+                            onClick={handleLinkGoogle}
+                            className="flex items-center justify-center gap-2 w-full bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs md:text-sm py-2 px-3 rounded-lg transition-colors shadow-md"
+                          >
+                            <Globe className="w-4 h-4 text-blue-500" />
+                            Google アカウントと連携
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <div className="flex items-center justify-between bg-slate-950/60 border border-slate-800 rounded-lg p-2.5">
+                            <div className="flex items-center gap-2">
+                              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+                              <span className="text-xs text-slate-350 font-bold">連携中</span>
+                            </div>
+                            <button
+                              onClick={() => {
+                                setAccessToken(null);
+                                setIsGoogleLinked(false);
+                                showToast("Google連携を解除しました。", "info");
+                              }}
+                              className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1 bg-red-950/20 px-2 py-0.5 rounded border border-red-900/30 transition-colors"
+                            >
+                              <LogOut className="w-3.5 h-3.5" />
+                              解除
+                            </button>
+                          </div>
+
+                          <div className="flex flex-col gap-2">
+                            <button
+                              onClick={backupToGoogleDrive}
+                              disabled={isSyncing}
+                              className="flex items-center justify-center gap-2 w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs md:text-sm py-2 px-3 rounded-lg transition-colors shadow-md disabled:opacity-50"
+                            >
+                              <UploadCloud className="w-4 h-4" />
+                              Driveへバックアップ
+                            </button>
+
+                            <button
+                              onClick={restoreFromGoogleDrive}
+                              disabled={isSyncing}
+                              className="flex items-center justify-center gap-2 w-full bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs md:text-sm py-2 px-3 rounded-lg transition-colors shadow-md disabled:opacity-50"
+                            >
+                              <DownloadCloud className="w-4 h-4" />
+                              Driveから復元
+                            </button>
+                          </div>
+                          
+                          <p className="text-[10px] text-slate-500 leading-normal text-center mt-1">
+                            データは `aorinavi_backup.json` に保存されます。
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
             </>
           ) : (
             // モバイル用設定メニュー
@@ -499,6 +825,72 @@ export default function Home() {
                 <Copy className="w-4 h-4" />
                 現在のデータをコピー
               </button>
+
+              <div className="h-px bg-slate-800 my-2"></div>
+
+              {/* モバイル用 Google Drive クラウド同期 */}
+              <div className="flex flex-col gap-3 bg-slate-950/30 p-3 rounded-xl border border-slate-850">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-350">
+                  <Cloud className="w-4 h-4 text-cyan-400" />
+                  クラウドバックアップ (Google Drive)
+                </div>
+
+                {!isGoogleLinked ? (
+                  <button
+                    onClick={() => {
+                      setShowMenu(false);
+                      setTimeout(handleLinkGoogle, 300);
+                    }}
+                    className="flex items-center justify-center gap-2 w-full bg-white hover:bg-slate-100 text-slate-900 font-bold text-xs py-2 px-3 rounded-lg transition-colors shadow-md"
+                  >
+                    <Globe className="w-4 h-4 text-blue-500" />
+                    Googleアカウントと連携
+                  </button>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between bg-slate-900 border border-slate-850 p-2 rounded-lg text-xs">
+                      <span className="text-slate-400 flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        連携中
+                      </span>
+                      <button
+                        onClick={() => {
+                          setAccessToken(null);
+                          setIsGoogleLinked(false);
+                          showToast("Google連携を解除しました。", "info");
+                        }}
+                        className="text-red-400 hover:text-red-300 font-bold text-[10px]"
+                      >
+                        連携解除
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setShowMenu(false);
+                        setTimeout(backupToGoogleDrive, 300);
+                      }}
+                      disabled={isSyncing}
+                      className="flex items-center justify-center gap-2 w-full bg-cyan-600 text-white font-bold text-xs py-2 px-3 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      <UploadCloud className="w-4 h-4" />
+                      Driveへバックアップ
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setShowMenu(false);
+                        setTimeout(restoreFromGoogleDrive, 300);
+                      }}
+                      disabled={isSyncing}
+                      className="flex items-center justify-center gap-2 w-full bg-slate-800 text-slate-200 border border-slate-700 font-bold text-xs py-2 px-3 rounded-lg transition-colors disabled:opacity-50"
+                    >
+                      <DownloadCloud className="w-4 h-4" />
+                      Driveから復元
+                    </button>
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -1187,6 +1579,31 @@ export default function Home() {
         </div>
       )}
       </main>
+
+      {/* フローティングトースト通知 */}
+      {toast && (
+        <div className="fixed top-24 left-1/2 -translate-x-1/2 z-[400] animate-in fade-in slide-in-from-top-3 duration-250 pointer-events-none">
+          <div className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border shadow-2xl backdrop-blur-md ${
+            toast.type === "success" 
+              ? "bg-emerald-950/90 border-emerald-500/50 text-emerald-300"
+              : toast.type === "error"
+                ? "bg-red-950/90 border-red-500/50 text-red-300"
+                : "bg-slate-900/90 border-slate-700/50 text-slate-200"
+          }`}>
+            {toast.type === "success" && <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />}
+            {toast.type === "error" && <AlertTriangle className="w-5 h-5 text-red-400 shrink-0" />}
+            {toast.type === "info" && <Info className="w-5 h-5 text-cyan-400 shrink-0" />}
+            <span className="text-xs md:text-sm font-bold tracking-wide">{toast.message}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Google GIS Script */}
+      <Script 
+        src="https://accounts.google.com/gsi/client" 
+        strategy="afterInteractive"
+        onLoad={() => console.log("Google Identity Services loaded")}
+      />
     </div>
   )
 }

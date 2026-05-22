@@ -15,6 +15,15 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "アオリナビOS",
   description: "風向きから最適なエギングポイントを探すアプリ",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "アオリナビOS",
+  },
+  icons: {
+    apple: "/icons/icon-192x192.png",
+  },
 };
 
 export default function RootLayout({
